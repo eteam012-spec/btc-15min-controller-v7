@@ -4,6 +4,8 @@
   "version": "7.0.0",
   "private": true,
   "description": "Tablet-friendly local BTC 15-minute strategy research controller",
+  "author": "eteam012-spec",
+  "license": "MIT",
   "main": "main.js",
   "scripts": { "start": "electron .", "dev": "electron ." },
   "devDependencies": {
