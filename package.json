@@ -1,0 +1,24 @@
+{
+  "name": "btc-15m-controller-v7",
+  "productName": "BTC 15-Minute Controller",
+  "version": "7.0.0",
+  "private": true,
+  "description": "Tablet-friendly local BTC 15-minute strategy research controller",
+  "main": "src/main.js",
+  "scripts": { "start": "electron .", "dev": "electron ." },
+  "devDependencies": {
+    "electron": "^38.1.0",
+    "@electron-forge/cli": "^7.8.1",
+    "@electron-forge/maker-squirrel": "^7.8.1",
+    "@electron-forge/maker-zip": "^7.8.1"
+  },
+  "config": {
+    "forge": {
+      "packagerConfig": { "asar": true, "name": "BTC15MinuteController", "executableName": "BTC15MinuteController" },
+      "makers": [
+        { "name": "@electron-forge/maker-squirrel", "config": { "name": "btc_15_minute_controller" } },
+        { "name": "@electron-forge/maker-zip", "platforms": ["win32"] }
+      ]
+    }
+  }
+}
