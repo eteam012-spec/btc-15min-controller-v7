@@ -11,38 +11,10 @@ const day=()=>new Date().toISOString().slice(0,10);
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const direction=n=>n>=0?'UP':'DOWN';
 
-async function boot(){
- const s=await window.controllerAPI.authStatus();
- if(!s.safeStorageAvailable){$('lockText').textContent='OS secure storage is unavailable.';return}
- $('lockText').textContent=s.configured?'Enter your private desktop passcode.':'Create your private desktop passcode.';
- $('unlock').textContent=s.configured?'UNLOCK':'CREATE & UNLOCK';$('unlock').onclick=unlock;$('resetPass').hidden=!s.configured;$('resetPass').onclick=resetPasscode;
-}
-async function resetPasscode(){const ok=window.confirm('Reset the local desktop passcode? Your saved strategy records will be kept.');if(!ok)return;const done=await window.controllerAPI.resetPasscode();if(done){$('pass').value='';$('lockText').textContent='Create your private desktop passcode.';$('unlock').textContent='CREATE & UNLOCK';$('resetPass').hidden=true;$('lockMsg').textContent='Passcode reset. Create a new one below.';}else{$('lockMsg').textContent='Could not reset the passcode.';}}
-async function unlock(){
- const p=$('pass').value.trim();
- $('unlock').disabled=true;
- $('unlock').textContent='WORKING…';
- $('lockMsg').textContent='';
- if(!p||p.length<12){$('lockMsg').textContent='Use at least 12 characters.';$('unlock').disabled=false;$('unlock').textContent='CREATE & UNLOCK';return}
- try{
-  const s=await window.controllerAPI.authStatus();
-  if(!s.safeStorageAvailable){$('lockMsg').textContent='Windows secure storage is unavailable. Close and reopen the app, then try again.';$('unlock').disabled=false;$('unlock').textContent=s.configured?'UNLOCK':'CREATE & UNLOCK';return}
-  if(!s.configured){
-   const ok=await window.controllerAPI.setPasscode(p);
-   if(!ok){$('lockMsg').textContent='Could not save the new passcode. Please try again.';$('unlock').disabled=false;$('unlock').textContent='CREATE & UNLOCK';return}
-  } else if(!(await window.controllerAPI.verifyPasscode(p))){
-   $('lockMsg').textContent='Incorrect passcode.';$('unlock').disabled=false;$('unlock').textContent='UNLOCK';return
-  }
-  $('lock').hidden=true;$('app').hidden=false;
-  $('unlock').disabled=false;
-  allRecords=await window.controllerAPI.readRecords();loadLearning();renderLearning();
-  $('feed').textContent='LIVE ADAPTER: CONNECTING…';
-  refreshKalshi(true).finally(()=>{polling= polling || setInterval(()=>refreshKalshi(false),3000);});
- }catch(e){
-  console.error(e);
-  $('lockMsg').textContent='Passcode setup failed. Please close and reopen the app, then try again.';
-  $('unlock').disabled=false;$('unlock').textContent='CREATE & UNLOCK';
- }
+async function startApp(){
+ allRecords=await window.controllerAPI.readRecords();loadLearning();renderLearning();
+ $('feed').textContent='LIVE ADAPTER: CONNECTING…';
+ refreshKalshi(true).finally(()=>{polling= polling || setInterval(()=>refreshKalshi(false),3000);});
 }
 function loadLearning(){
  const m=allRecords.slice().reverse().find(r=>r.type==='LEARNING_MODEL');
@@ -104,4 +76,4 @@ function isOpen(m){return m&&String(m.status||'').toLowerCase()==='open'}
 function candidate(markets){const arr=(markets||[]).filter(m=>{const t=((m.title||'')+' '+(m.subtitle||'')+' '+(m.ticker||'')+' '+(m.event_ticker||'')).toLowerCase();return(t.includes('bitcoin')||t.includes('btc'))&&/15\s*min|15-minute|15minute/.test(t)&&isOpen(m)});arr.sort((a,b)=>new Date(a.close_time||a.expiration_time||0)-new Date(b.close_time||b.expiration_time||0));return arr.find(m=>new Date(m.close_time||m.expiration_time||0)>new Date())||null}
 async function refreshKalshi(force=false){try{if(liveTicker&&liveMarket){const old=await window.controllerAPI.kalshiSnapshot(liveTicker);const oldClose=new Date(old.closeTime||old.expirationTime||0).getTime();if(oldClose&&Date.now()>=oldClose){pendingWindows.set(liveTicker,pendingWindows.get(liveTicker)||{windowId,windowStart,rows:[...rows]});rows=[];await finalizePending(liveTicker,old)}}const resp=await window.controllerAPI.kalshiMarkets({limit:100,status:'open'}),m=candidate(resp.markets||[]);if(!m){$('feed').textContent='LIVE ADAPTER: NO OPEN BTC 15-MINUTE CONTRACT FOUND — NOT GUESSING';$('contractState').textContent='NO ACTIVE CONTRACT';liveTicker=null;liveMarket=null;calc();return}const snap=await window.controllerAPI.kalshiSnapshot(m.ticker),changed=liveTicker!==snap.ticker;liveTicker=snap.ticker;liveMarket=snap;if(changed||force)startWindow(snap);const p=marketPrice(snap);if(p!==null)$('up').value=p.toFixed(1);const strike=extractTarget(snap);if(strike!==null)$('target').value=strike;lastLiveAt=Date.now();$('ticker').textContent=liveTicker;$('feed').textContent='LIVE ADAPTER: CONNECTED • PUBLIC KALSHI MARKET DATA';$('contractState').textContent=String(snap.status||'UNKNOWN').toUpperCase();$('officialResult').textContent=snap.result||'PENDING';const close=new Date(snap.closeTime||snap.expirationTime||0);$('closeAt').textContent=isNaN(close.getTime())?'—':close.toLocaleTimeString();calc();render()}catch(e){$('feed').textContent='LIVE ADAPTER: STALE / UNAVAILABLE — NOT GUESSING';$('contractState').textContent='STALE';calc();render()}}
 setInterval(()=>{if(lastLiveAt)$('age').textContent=Math.floor((Date.now()-lastLiveAt)/1000)+'s';calc()},1000);
-$('update').onclick=record;$('next').onclick=async()=>{if(minute<15){await record();minute++;calc();render()}else await rollover()};$('newWindow').onclick=()=>refreshKalshi(true);$('paperOrder').onclick=paperExecute;$('export').onclick=exportCSV;$('lockBtn').onclick=()=>location.reload();boot();
+$('update').onclick=record;$('next').onclick=async()=>{if(minute<15){await record();minute++;calc();render()}else await rollover()};$('newWindow').onclick=()=>refreshKalshi(true);$('paperOrder').onclick=paperExecute;$('export').onclick=exportCSV;startApp();
