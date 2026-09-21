@@ -25,3 +25,12 @@ button { touch-action: manipulation; }
   button { min-height: 58px; }
   input, select { min-height: 52px; }
 }
+
+.raccoon{position:fixed;z-index:5;font-size:30px;pointer-events:none;filter:drop-shadow(0 4px 4px #000);user-select:none}
+.raccoon-a{left:-50px;top:18%;animation:raccoonCrawl 22s linear infinite}
+.raccoon-b{right:-50px;top:55%;animation:raccoonFall 17s ease-in-out infinite}
+.raccoon-c{left:20%;top:-50px;animation:raccoonDrop 19s linear infinite}
+@keyframes raccoonCrawl{0%{transform:translateX(0) rotate(0)}50%{transform:translateX(55vw) rotate(-4deg)}100%{transform:translateX(110vw) rotate(0)}}
+@keyframes raccoonFall{0%{transform:translate(0,-20vh) rotate(0)}50%{transform:translate(-30vw,35vh) rotate(-20deg)}100%{transform:translate(-80vw,90vh) rotate(-45deg)}}
+@keyframes raccoonDrop{0%{transform:translateY(0) rotate(-8deg)}15%{transform:translateY(55vh) rotate(12deg)}100%{transform:translateY(115vh) rotate(40deg)}}
+.live-panel{position:relative;overflow:hidden}
