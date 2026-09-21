@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('controllerAPI', {
   kalshiAutoDisarm: () => ipcRenderer.invoke('kalshi:autoDisarm'),
   kalshiBalance: exchangeIndex => ipcRenderer.invoke('kalshi:balance', {exchangeIndex}),
   kalshiPositions: (ticker, exchangeIndex) => ipcRenderer.invoke('kalshi:positions', {ticker, exchangeIndex}),
+  kalshiFills: params => ipcRenderer.invoke('kalshi:fills', params || {}),
+  kalshiSettlements: params => ipcRenderer.invoke('kalshi:settlements', params || {}),
   kalshiOrder: order => ipcRenderer.invoke('kalshi:order', order),
   kalshiAutoOrder: order => ipcRenderer.invoke('kalshi:autoOrder', order),
   kalshiMarkets: params => ipcRenderer.invoke('kalshi:markets', params),
