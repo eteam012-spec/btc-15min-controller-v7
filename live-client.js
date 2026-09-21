@@ -1,6 +1,4 @@
 const crypto = require('crypto');
-const fs = require('fs');
-
 const PROD_BASE = 'https://external-api.kalshi.com/trade-api/v2';
 const ORDER_PATH = '/portfolio/events/orders';
 
@@ -91,7 +89,7 @@ async function placeOrder(creds, {ticker, side, count, priceCents, clientOrderId
     cancel_order_on_pause: true,
     reduce_only: Boolean(reduceOnly),
     post_only: false,
-    exchange_index: Number.isInteger(exchangeIndex) ? exchangeIndex : -1
+    ...(Number.isInteger(exchangeIndex) && exchangeIndex >= 0 ? {exchange_index: exchangeIndex} : {})
   };
   return request({...creds, method:'POST', path:ORDER_PATH, body});
 }
