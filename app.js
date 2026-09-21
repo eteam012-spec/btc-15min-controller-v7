@@ -106,4 +106,64 @@ async function refreshKalshi(force=false){try{let previousExpired=false;if(liveT
 }else{liveTicker=snap.ticker;liveMarket=snap}const p=marketPrice(snap);if(p!==null)$('up').value=p.toFixed(1);const strike=extractTarget(snap);if(strike!==null)$('target').value=strike;lastLiveAt=Date.now();$('ticker').textContent=liveTicker;$('feed').textContent='LIVE ADAPTER: CONNECTED • PUBLIC KALSHI MARKET DATA';$('contractState').textContent=String(snap.status||'UNKNOWN').toUpperCase();$('officialResult').textContent=snap.result||'PENDING';const close=new Date(snap.closeTime||snap.expirationTime||0);$('closeAt').textContent=isNaN(close.getTime())?'—':close.toLocaleTimeString();calc();render()}catch(e){$('feed').textContent='LIVE ADAPTER: STALE / UNAVAILABLE — NOT GUESSING';$('contractState').textContent='STALE';calc();render()}}
 setInterval(()=>{if(lastLiveAt)$('age').textContent=Math.floor((Date.now()-lastLiveAt)/1000)+'s';calc()},1000);
 setInterval(()=>refreshBtc(),3000);
-$('update').onclick=record;$('next').onclick=async()=>{if(minute<15){await record();minute++;calc();render()}else await rollover()};$('newWindow').onclick=()=>refreshKalshi(true);$('paperOrder').onclick=paperExecute;$('export').onclick=exportCSV;startApp();
+$('update').onclick=record;$('next').onclick=async()=>{if(minute<15){await record();minute++;calc();render()}else await rollover()};$('newWindow').onclick=()=>refreshKalshi(true);$('paperOrder').onclick=paperExecute;$('export').onclick=exportCSV;
+async function liveSetup(){
+  try{
+    const s=await window.controllerAPI.kalshiStatus();
+    $('liveStatus').textContent=s.credentialStored
+      ? ('LIVE EXECUTION: '+(s.tradingEnabled?'ARMED':'DISARMED')+' • credentials stored in OS secure storage')
+      : 'LIVE EXECUTION: DISARMED • configure credentials first';
+  }catch(e){$('liveStatus').textContent='LIVE EXECUTION: '+e.message}
+}
+async function saveLiveCredentials(){
+  try{
+    const key=$('apiKeyId').value.trim(), pem=$('privateKey').value;
+    if(!key||!pem)throw new Error('Enter the API key ID and private key');
+    await window.controllerAPI.kalshiConfigure(key,pem);
+    $('privateKey').value='';
+    $('liveStatus').textContent='CREDENTIALS SAVED • OS secure storage • LIVE STILL DISARMED';
+    await liveSetup();
+  }catch(e){$('liveStatus').textContent='CREDENTIAL ERROR: '+e.message}
+}
+async function armLive(){
+  try{const r=await window.controllerAPI.kalshiArm();$('liveStatus').textContent=r.armed?'LIVE EXECUTION: ARMED':'LIVE EXECUTION: DISARMED'}catch(e){$('liveStatus').textContent='ARM ERROR: '+e.message}
+}
+async function disarmLive(){try{await window.controllerAPI.kalshiDisarm();$('liveStatus').textContent='LIVE EXECUTION: DISARMED'}catch(e){$('liveStatus').textContent='DISARM ERROR: '+e.message}}
+async function liveBalance(){
+  try{const r=await window.controllerAPI.kalshiBalance();const cents=Number(r.balance);$('liveStatus').textContent=Number.isFinite(cents)?('LIVE BALANCE: +(cents/100).toFixed(2)):'BALANCE RESPONSE RECEIVED';}
+  catch(e){$('liveStatus').textContent='BALANCE ERROR: '+e.message}
+}
+function liveQuoteCents(outcome){
+  const yes=(liveMarket?.orderbook?.yes||[]).map(parseLevel).filter(Boolean);
+  const no=(liveMarket?.orderbook?.no||[]).map(parseLevel).filter(Boolean);
+  const bestYesBid=yes.length?Math.max(...yes.map(x=>x.price)):null;
+  const bestNoBid=no.length?Math.max(...no.map(x=>x.price)):null;
+  if(outcome==='UP' && bestNoBid!==null)return clamp(Math.ceil(100-bestNoBid),1,99);
+  if(outcome==='DOWN' && bestYesBid!==null)return clamp(Math.ceil(100-bestYesBid),1,99);
+  return null;
+}
+async function liveExecute(){
+  try{
+    const f=calc();
+    if(f.action!=='PAPER READY')throw new Error('Engine is not ready: '+f.action);
+    if(!liveTicker||!liveMarket)throw new Error('No active Kalshi contract');
+    const maxSpend=Math.max(0.01,Number($('liveMaxSpend').value)||2);
+    const priceCents=liveQuoteCents(f.pick);
+    if(priceCents===null)throw new Error('No executable live quote available');
+    const count=Math.floor((maxSpend*100)/priceCents);
+    if(count<1)throw new Error('Max spend +maxSpend.toFixed(2)+' is below one contract at '+priceCents+'¢');
+    $('liveStatus').textContent='LIVE ORDER PREVIEW: '+f.pick+' • '+count+' contract(s) • '+priceCents+'¢ max • +(count*priceCents/100).toFixed(2)+' max cost • '+liveTicker;
+    const r=await window.controllerAPI.kalshiOrder({ticker:liveTicker,outcome:f.pick,count,priceCents});
+    const filled=Number(r.fill_count??r.filled_count??r.fill_count_fp??0);
+    $('liveStatus').textContent='LIVE ORDER SUBMITTED • '+f.pick+' • '+count+' contracts • '+priceCents+'¢ • order '+(r.order_id||'accepted')+' • filled '+filled;
+    rows.push({id:windowId+':LIVE:'+Date.now(),date:day(),timestamp:new Date().toISOString(),windowId,windowStart,minute,marketTicker:liveTicker,type:'LIVE_ORDER',side:f.pick,entryPriceCents:priceCents,count,orderId:r.order_id||'',clientOrderId:r.clientOrderId||'',fillCount:filled,result:'PENDING'});
+    await persist();
+  }catch(e){$('liveStatus').textContent='LIVE ORDER BLOCKED/FAILED: '+e.message}
+}
+$('saveCreds').onclick=saveLiveCredentials;
+$('armLive').onclick=armLive;
+$('disarmLive').onclick=disarmLive;
+$('liveBalance').onclick=liveBalance;
+$('liveExecute').onclick=liveExecute;
+
+startApp();
