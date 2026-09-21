@@ -91,7 +91,6 @@ function syncWindowNumberForContract(m){
  const lastStart=new Date(latest.windowStart).getTime();
  if(!Number.isFinite(lastStart))return;
  const buckets=Math.max(0,Math.floor((currentStart-lastStart)/(15*60*1000)));
- windowNumber=clamp(Number(latest.windowNumber)||1+buckets,1,15);
  windowNumber=clamp((Number(latest.windowNumber)||1)+buckets,1,15);
 }
 async function refreshKalshi(force=false){try{let previousExpired=false;if(liveTicker&&liveMarket){const old=await window.controllerAPI.kalshiSnapshot(liveTicker);const oldClose=new Date(old.closeTime||old.expirationTime||0).getTime();if(oldClose&&Date.now()>=oldClose){previousExpired=true;pendingWindows.set(liveTicker,pendingWindows.get(liveTicker)||{windowId,windowStart,rows:[...rows]});rows=[];await finalizePending(liveTicker,old)}}const resp=await window.controllerAPI.kalshiMarkets({limit:1000,status:'open',seriesTicker:'KXBTC15M'}),m=candidate(resp.markets||[]);if(!m){$('feed').textContent='LIVE ADAPTER: NO OPEN BTC 15-MINUTE CONTRACT FOUND — NOT GUESSING';$('contractState').textContent='NO ACTIVE CONTRACT';liveTicker=null;liveMarket=null;calc();return}const snap=await window.controllerAPI.kalshiSnapshot(m.ticker),hadTicker=Boolean(liveTicker),changed=liveTicker!==snap.ticker;if(changed){
