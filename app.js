@@ -13,7 +13,10 @@ const direction=n=>n>=0?'UP':'DOWN';
 
 async function startApp(){
  allRecords=await window.controllerAPI.readRecords();
- const savedWindowNumbers=allRecords.filter(r=>Number.isFinite(Number(r.windowNumber))).map(r=>Number(r.windowNumber));
+ // Window numbers are a daily session counter, not a permanent counter.
+ // Never carry yesterday's window number into a new trading day.
+ const todayRecords=allRecords.filter(r=>r.date===day()&&Number.isFinite(Number(r.windowNumber)));
+ const savedWindowNumbers=todayRecords.map(r=>Number(r.windowNumber));
  if(savedWindowNumbers.length)windowNumber=Math.max(1,...savedWindowNumbers);
  loadLearning();renderLearning();
  $('feed').textContent='LIVE ADAPTER: CONNECTING…';
@@ -79,7 +82,29 @@ function exportCSV(){const data=allRecords.filter(r=>r.type!=='LEARNING_MODEL').
 function isOpen(m){const s=String(m?.status||'').toLowerCase();return s==='open'||s==='active'}
 function candidate(markets){const arr=(markets||[]).filter(m=>{const t=((m.title||'')+' '+(m.subtitle||'')+' '+(m.ticker||'')+' '+(m.event_ticker||'')).toLowerCase();return(t.includes('bitcoin')||t.includes('btc'))&&/15\s*min|15-minute|15minute/.test(t)&&isOpen(m)});arr.sort((a,b)=>new Date(a.close_time||a.expiration_time||0)-new Date(b.close_time||b.expiration_time||0));return arr.find(m=>new Date(m.close_time||m.expiration_time||0)>new Date())||null}
 async function refreshBtc(){try{const r=await window.controllerAPI.btcSpot();if(Number.isFinite(Number(r.price))){$('btc').value=Number(r.price).toFixed(2);lastBtcAt=Date.now();$('btcSource').textContent='LIVE BTC: '+(r.sources||[]).map(x=>x.source).join(' + ')+' median • SPOT PROXY';calc()}}catch(e){$('btcSource').textContent='LIVE BTC: UNAVAILABLE — WAITING FOR FRESH DATA';calc()}}
-async function refreshKalshi(force=false){try{let previousExpired=false;if(liveTicker&&liveMarket){const old=await window.controllerAPI.kalshiSnapshot(liveTicker);const oldClose=new Date(old.closeTime||old.expirationTime||0).getTime();if(oldClose&&Date.now()>=oldClose){previousExpired=true;pendingWindows.set(liveTicker,pendingWindows.get(liveTicker)||{windowId,windowStart,rows:[...rows]});rows=[];await finalizePending(liveTicker,old)}}const resp=await window.controllerAPI.kalshiMarkets({limit:1000,status:'open',seriesTicker:'KXBTC15M'}),m=candidate(resp.markets||[]);if(!m){$('feed').textContent='LIVE ADAPTER: NO OPEN BTC 15-MINUTE CONTRACT FOUND — NOT GUESSING';$('contractState').textContent='NO ACTIVE CONTRACT';liveTicker=null;liveMarket=null;calc();return}const snap=await window.controllerAPI.kalshiSnapshot(m.ticker),hadTicker=Boolean(liveTicker),changed=liveTicker!==snap.ticker;if(changed){if(hadTicker&&previousExpired)windowNumber=Math.min(15,windowNumber+1);liveTicker=snap.ticker;liveMarket=snap;startWindow(snap)}else{liveTicker=snap.ticker;liveMarket=snap}const p=marketPrice(snap);if(p!==null)$('up').value=p.toFixed(1);const strike=extractTarget(snap);if(strike!==null)$('target').value=strike;lastLiveAt=Date.now();$('ticker').textContent=liveTicker;$('feed').textContent='LIVE ADAPTER: CONNECTED • PUBLIC KALSHI MARKET DATA';$('contractState').textContent=String(snap.status||'UNKNOWN').toUpperCase();$('officialResult').textContent=snap.result||'PENDING';const close=new Date(snap.closeTime||snap.expirationTime||0);$('closeAt').textContent=isNaN(close.getTime())?'—':close.toLocaleTimeString();calc();render()}catch(e){$('feed').textContent='LIVE ADAPTER: STALE / UNAVAILABLE — NOT GUESSING';$('contractState').textContent='STALE';calc();render()}}
+function contractStartMs(m){const close=new Date(m?.closeTime||m?.expirationTime||0).getTime();return Number.isFinite(close)&&close>0?close-15*60*1000:null}
+function syncWindowNumberForContract(m){
+ const currentStart=contractStartMs(m);if(currentStart===null)return;
+ const todayRows=allRecords.filter(r=>r.date===day()&&r.type!=='LEARNING_MODEL'&&r.windowStart);
+ if(!todayRows.length){windowNumber=1;return}
+ const latest=todayRows.reduce((a,b)=>new Date(a.windowStart).getTime()>new Date(b.windowStart).getTime()?a:b);
+ const lastStart=new Date(latest.windowStart).getTime();
+ if(!Number.isFinite(lastStart))return;
+ const buckets=Math.max(0,Math.floor((currentStart-lastStart)/(15*60*1000)));
+ windowNumber=clamp(Number(latest.windowNumber)||1+buckets,1,15);
+ windowNumber=clamp((Number(latest.windowNumber)||1)+buckets,1,15);
+}
+async function refreshKalshi(force=false){try{let previousExpired=false;if(liveTicker&&liveMarket){const old=await window.controllerAPI.kalshiSnapshot(liveTicker);const oldClose=new Date(old.closeTime||old.expirationTime||0).getTime();if(oldClose&&Date.now()>=oldClose){previousExpired=true;pendingWindows.set(liveTicker,pendingWindows.get(liveTicker)||{windowId,windowStart,rows:[...rows]});rows=[];await finalizePending(liveTicker,old)}}const resp=await window.controllerAPI.kalshiMarkets({limit:1000,status:'open',seriesTicker:'KXBTC15M'}),m=candidate(resp.markets||[]);if(!m){$('feed').textContent='LIVE ADAPTER: NO OPEN BTC 15-MINUTE CONTRACT FOUND — NOT GUESSING';$('contractState').textContent='NO ACTIVE CONTRACT';liveTicker=null;liveMarket=null;calc();return}const snap=await window.controllerAPI.kalshiSnapshot(m.ticker),hadTicker=Boolean(liveTicker),changed=liveTicker!==snap.ticker;if(changed){
+ if(hadTicker){
+   // A new ticker is the authoritative rollover event. Do not depend on the
+   // previous contract status check succeeding; polling can miss the exact close.
+   windowNumber=Math.min(15,windowNumber+1);
+ }else{
+   // On startup/reload, recover the correct daily position from persisted records.
+   syncWindowNumberForContract(snap);
+ }
+ liveTicker=snap.ticker;liveMarket=snap;startWindow(snap)
+}else{liveTicker=snap.ticker;liveMarket=snap}const p=marketPrice(snap);if(p!==null)$('up').value=p.toFixed(1);const strike=extractTarget(snap);if(strike!==null)$('target').value=strike;lastLiveAt=Date.now();$('ticker').textContent=liveTicker;$('feed').textContent='LIVE ADAPTER: CONNECTED • PUBLIC KALSHI MARKET DATA';$('contractState').textContent=String(snap.status||'UNKNOWN').toUpperCase();$('officialResult').textContent=snap.result||'PENDING';const close=new Date(snap.closeTime||snap.expirationTime||0);$('closeAt').textContent=isNaN(close.getTime())?'—':close.toLocaleTimeString();calc();render()}catch(e){$('feed').textContent='LIVE ADAPTER: STALE / UNAVAILABLE — NOT GUESSING';$('contractState').textContent='STALE';calc();render()}}
 setInterval(()=>{if(lastLiveAt)$('age').textContent=Math.floor((Date.now()-lastLiveAt)/1000)+'s';calc()},1000);
 setInterval(()=>refreshBtc(),3000);
 $('update').onclick=record;$('next').onclick=async()=>{if(minute<15){await record();minute++;calc();render()}else await rollover()};$('newWindow').onclick=()=>refreshKalshi(true);$('paperOrder').onclick=paperExecute;$('export').onclick=exportCSV;startApp();
