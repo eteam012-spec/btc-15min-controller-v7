@@ -19,22 +19,28 @@ async function boot(){
 }
 async function unlock(){
  const p=$('pass').value.trim();
+ $('unlock').disabled=true;
+ $('unlock').textContent='WORKING…';
  $('lockMsg').textContent='';
- if(!p||p.length<12){$('lockMsg').textContent='Use at least 12 characters.';return}
+ if(!p||p.length<12){$('lockMsg').textContent='Use at least 12 characters.';$('unlock').disabled=false;$('unlock').textContent='CREATE & UNLOCK';return}
  try{
   const s=await window.controllerAPI.authStatus();
-  if(!s.safeStorageAvailable){$('lockMsg').textContent='Windows secure storage is unavailable. Close and reopen the app, then try again.';return}
+  if(!s.safeStorageAvailable){$('lockMsg').textContent='Windows secure storage is unavailable. Close and reopen the app, then try again.';$('unlock').disabled=false;$('unlock').textContent=s.configured?'UNLOCK':'CREATE & UNLOCK';return}
   if(!s.configured){
    const ok=await window.controllerAPI.setPasscode(p);
-   if(!ok){$('lockMsg').textContent='Could not save the new passcode. Please try again.';return}
+   if(!ok){$('lockMsg').textContent='Could not save the new passcode. Please try again.';$('unlock').disabled=false;$('unlock').textContent='CREATE & UNLOCK';return}
   } else if(!(await window.controllerAPI.verifyPasscode(p))){
-   $('lockMsg').textContent='Incorrect passcode.';return
+   $('lockMsg').textContent='Incorrect passcode.';$('unlock').disabled=false;$('unlock').textContent='UNLOCK';return
   }
   $('lock').hidden=true;$('app').hidden=false;
-  allRecords=await window.controllerAPI.readRecords();loadLearning();renderLearning();await refreshKalshi(true);polling=setInterval(()=>refreshKalshi(false),3000);
+  $('unlock').disabled=false;
+  allRecords=await window.controllerAPI.readRecords();loadLearning();renderLearning();
+  $('feed').textContent='LIVE ADAPTER: CONNECTING…';
+  refreshKalshi(true).finally(()=>{polling= polling || setInterval(()=>refreshKalshi(false),3000);});
  }catch(e){
   console.error(e);
   $('lockMsg').textContent='Passcode setup failed: '+(e?.message||'unknown error');
+  $('unlock').disabled=false;$('unlock').textContent='CREATE & UNLOCK';
  }
 }
 function loadLearning(){
