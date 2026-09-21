@@ -149,8 +149,8 @@ async function liveExecute(){
     const priceCents=liveQuoteCents(f.pick);
     if(priceCents===null)throw new Error('No executable live quote available');
     const count=Math.floor((maxSpend*100)/priceCents);
-    if(count<1)throw new Error('Max spend +maxSpend.toFixed(2)+' is below one contract at '+priceCents+'¢');
-    $('liveStatus').textContent='LIVE ORDER PREVIEW: '+f.pick+' • '+count+' contract(s) • '+priceCents+'¢ max • +(count*priceCents/100).toFixed(2)+' max cost • '+liveTicker;
+    if(count<1)throw new Error(`Max spend ${maxSpend.toFixed(2)} is below one contract at ${priceCents}¢`);
+    $('liveStatus').textContent=`LIVE ORDER PREVIEW: ${f.pick} • ${count} contract(s) • ${priceCents}¢ max • ${(count*priceCents/100).toFixed(2)} max cost • ${liveTicker}`;
     const r=await window.controllerAPI.kalshiOrder({ticker:liveTicker,outcome:f.pick,count,priceCents});
     const filled=Number(r.fill_count??r.filled_count??r.fill_count_fp??0);
     $('liveStatus').textContent='LIVE ORDER SUBMITTED • '+f.pick+' • '+count+' contracts • '+priceCents+'¢ • order '+(r.order_id||'accepted')+' • filled '+filled;
