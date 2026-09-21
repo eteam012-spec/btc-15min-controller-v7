@@ -62,6 +62,15 @@ async function getPositions(creds, ticker, exchangeIndex) {
   const q=qs.length?'?'+qs.join('&'):''; return request({...creds, method:'GET', path:'/portfolio/positions'+q});
 }
 
+async function getFills(creds, params={}) {
+  const qs=[]; for(const [k,v] of Object.entries(params||{})){if(v!==undefined&&v!==null&&v!=='')qs.push(encodeURIComponent(k)+'='+encodeURIComponent(v))}
+  return request({...creds, method:'GET', path:'/portfolio/fills'+(qs.length?'?'+qs.join('&'):'')});
+}
+async function getSettlements(creds, params={}) {
+  const qs=[]; for(const [k,v] of Object.entries(params||{})){if(v!==undefined&&v!==null&&v!=='')qs.push(encodeURIComponent(k)+'='+encodeURIComponent(v))}
+  return request({...creds, method:'GET', path:'/portfolio/settlements'+(qs.length?'?'+qs.join('&'):'')});
+}
+
 async function getOrder(creds, orderId) {
   return request({...creds, method:'GET', path:'/portfolio/orders/' + encodeURIComponent(orderId)});
 }
@@ -92,4 +101,4 @@ async function placeIOC(creds, {ticker, outcome, count, priceCents, clientOrderI
   return placeOrder(creds,{ticker,side,count,priceCents,clientOrderId,reduceOnly,exchangeIndex});
 }
 
-module.exports = { getBalance, getPositions, getOrder, placeIOC, placeOrder };
+module.exports = { getBalance, getPositions, getFills, getSettlements, getOrder, placeIOC, placeOrder };
