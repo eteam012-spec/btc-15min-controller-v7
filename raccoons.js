@@ -66,47 +66,35 @@
     return uiObstacles().some(o=>x<GAP+o.right&&x+W>o.left-GAP&&y<GAP+o.bottom&&y+H>o.top-GAP);
   }
 
-  function candidatePoints(target){
-    const r=rect(target);if(!r)return [];
-    const cx=r.left+r.width/2,cy=r.top+r.height/2;
-    return [
-      [cx-W/2,r.top-H-GAP,-2],
-      [cx-W/2,r.bottom+GAP,2],
-      [r.left-W-GAP,cy-H/2,-90],
-      [r.right+GAP,cy-H/2,90],
-      [r.left+GAP,r.top-H-GAP,-5],
-      [r.right-W-GAP,r.top-H-GAP,5],
-      [r.left+GAP,r.bottom+GAP,5],
-      [r.right-W-GAP,r.bottom+GAP,-5]
-    ].map(p=>({x:clamp(p[0],PAD,innerWidth-W-PAD),y:clamp(p[1],PAD,innerHeight-H-PAD),rot:p[2]}));
+  function freePoint(preferred=null,index=0){
+    const candidates=[], maxX=Math.max(PAD,innerWidth-W-PAD), maxY=Math.max(PAD,innerHeight-H-PAD);
+    for(let row=0;row<5;row++) for(let col=0;col<7;col++) candidates.push({x:PAD+col*(maxX-PAD)/6,y:PAD+row*(maxY-PAD)/4,rot:0});
+    if(preferred){const r=rect(preferred);if(r)candidates.unshift(
+      {x:r.left-W*.72,y:r.top-H*.72,rot:8,contact:'left'},
+      {x:r.right-W*.28,y:r.top-H*.72,rot:-8,contact:'right'},
+      {x:r.left-W*.72,y:r.bottom-H*.25,rot:8,contact:'left'},
+      {x:r.right-W*.28,y:r.bottom-H*.25,rot:-8,contact:'right'}
+    );}
+    const safe=candidates.map(p=>({...p,x:clamp(p.x,PAD,maxX),y:clamp(p.y,PAD,maxY)})).filter(p=>!overlap(p.x,p.y));
+    return safe[(index*7)%Math.max(1,safe.length)] || {x:PAD,y:PAD,rot:0};
   }
-
-  function safePoint(target,index){
-    const pts=candidatePoints(target).filter(p=>!overlap(p.x,p.y));
-    if(pts.length)return pts[index%pts.length];
-    // If the UI is dense, use a guaranteed screen gutter rather than covering a control.
-    const gutters=[
-      {x:PAD,y:PAD,rot:0},{x:innerWidth-W-PAD,y:PAD,rot:0},
-      {x:PAD,y:innerHeight-H-PAD,rot:0},{x:innerWidth-W-PAD,y:innerHeight-H-PAD,rot:0}
-    ];
-    return gutters.find(p=>!overlap(p.x,p.y))||gutters[0];
-  }
-
   function setXY(el,x,y,instant=false){
     x=clamp(x,PAD,innerWidth-W-PAD);y=clamp(y,PAD,innerHeight-H-PAD);
     if(instant){el.style.transition='none';el.style.left=x+'px';el.style.top=y+'px';requestAnimationFrame(()=>el.style.transition='');return;}
     el.style.left=x+'px';el.style.top=y+'px';
   }
-
-  function moveTo(el,p,duration=1800){
+  function moveTo(el,p,duration=2400){
     if(!p)return Promise.resolve();
-    el.style.setProperty('--travel-rot',p.rot+'deg');
-    el.style.transitionDuration=duration+'ms';
-    el.classList.add('traveling');
-    setXY(el,p.x,p.y);
-    return wait(duration);
+    const x0=parseFloat(el.style.left)||PAD,y0=parseFloat(el.style.top)||PAD,x1=p.x,y1=p.y,dx=x1-x0,dy=y1-y0;
+    const bend=Math.min(150,Math.max(35,Math.hypot(dx,dy)*.22)),len=Math.hypot(dx,dy)||1,nx=-dy/len,ny=dx/len;
+    const c1={x:x0+dx*.30+nx*bend,y:y0+dy*.30+ny*bend},c2={x:x0+dx*.78-nx*bend*.55,y:y0+dy*.78-ny*bend*.55};
+    return new Promise(resolve=>{const t0=performance.now();el.classList.add('traveling','walking');const step=now=>{
+      const u=Math.min(1,(now-t0)/duration),e=u<.5?4*u*u*u:1-Math.pow(-2*u+2,3)/2,q=1-e;
+      const x=q*q*q*x0+3*q*q*e*c1.x+3*q*e*e*c2.x+e*e*e*x1,y=q*q*q*y0+3*q*q*e*c1.y+3*q*e*e*c2.y+e*e*e*y1;
+      el.style.left=clamp(x,PAD,innerWidth-W-PAD)+'px';el.style.top=clamp(y,PAD,innerHeight-H-PAD)+'px';
+      if(u<1)requestAnimationFrame(step);else{el.classList.remove('traveling');resolve();}
+    };requestAnimationFrame(step);});
   }
-
   function pose(el,name){
     el.dataset.pose=name;
     el.classList.remove('walking','climbing','sitting','peeking','tapping','watching','alerting','celebrate');
@@ -134,7 +122,7 @@
     let n=index;
     while(document.body.contains(el)){
       reaction(el,who);
-      const p=safePoint(who.targets[n%who.targets.length],n);
+      const p=freePoint(who.targets[n%who.targets.length],n+index*2);
       pose(el,'walking');
       say(el,index===0?'Checking BTC…':index===1?'Working the panel…':'Checking that control…',true);
       await moveTo(el,p,1850+((n*137)%550));
@@ -197,8 +185,7 @@
   addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>els.forEach((el,i)=>{const p=safePoint(crew[i].targets[0],i);setXY(el,p.x,p.y);}),150);});
 
   els.forEach((el,i)=>{
-    const p=safePoint(crew[i].targets[0],i);
-    setXY(el,p.x,p.y,true);
+    const p=freePoint(crew[i].targets[0],i*2); setXY(el,p.x,p.y,true);
     el.addEventListener('pointerenter',()=>{el.classList.add('attention');say(el,i===0?'I see it.':i===1?'On it.':'Found you!',true);});
     el.addEventListener('pointerleave',()=>el.classList.remove('attention'));
   });
