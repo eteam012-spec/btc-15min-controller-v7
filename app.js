@@ -15,8 +15,9 @@ async function boot(){
  const s=await window.controllerAPI.authStatus();
  if(!s.safeStorageAvailable){$('lockText').textContent='OS secure storage is unavailable.';return}
  $('lockText').textContent=s.configured?'Enter your private desktop passcode.':'Create your private desktop passcode.';
- $('unlock').textContent=s.configured?'UNLOCK':'CREATE & UNLOCK';$('unlock').onclick=unlock;
+ $('unlock').textContent=s.configured?'UNLOCK':'CREATE & UNLOCK';$('unlock').onclick=unlock;$('resetPass').hidden=!s.configured;$('resetPass').onclick=resetPasscode;
 }
+async function resetPasscode(){const ok=window.confirm('Reset the local desktop passcode? Your saved strategy records will be kept.');if(!ok)return;const done=await window.controllerAPI.resetPasscode();if(done){$('pass').value='';$('lockText').textContent='Create your private desktop passcode.';$('unlock').textContent='CREATE & UNLOCK';$('resetPass').hidden=true;$('lockMsg').textContent='Passcode reset. Create a new one below.';}else{$('lockMsg').textContent='Could not reset the passcode.';}}
 async function unlock(){
  const p=$('pass').value.trim();
  $('unlock').disabled=true;
@@ -39,7 +40,7 @@ async function unlock(){
   refreshKalshi(true).finally(()=>{polling= polling || setInterval(()=>refreshKalshi(false),3000);});
  }catch(e){
   console.error(e);
-  $('lockMsg').textContent='Passcode setup failed: '+(e?.message||'unknown error');
+  $('lockMsg').textContent='Passcode setup failed. Please close and reopen the app, then try again.';
   $('unlock').disabled=false;$('unlock').textContent='CREATE & UNLOCK';
  }
 }
