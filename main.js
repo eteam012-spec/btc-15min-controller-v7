@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, session, safeStorage, dialog } = require('electron');
-const https=require('https');const path=require('path');const fs=require('fs');const crypto=require('crypto');const {getBalance,getPositions,getOrder,placeIOC}=require('./live-client');
-let mainWindow;let liveArmed=false;let liveFirstOrderConfirmed=false;const dataDir=path.join(app.getPath('userData'),'data');const recordsFile=path.join(dataDir,'records.json');const credentialsFile=path.join(dataDir,'kalshi.credentials');
+const https=require('https');const path=require('path');const fs=require('fs');const crypto=require('crypto');const {getBalance,getPositions,getOrder,placeIOC,placeOrder}=require('./live-client');
+let mainWindow;let liveArmed=false;let autoLive=false;let liveFirstOrderConfirmed=false;const dataDir=path.join(app.getPath('userData'),'data');const recordsFile=path.join(dataDir,'records.json');const credentialsFile=path.join(dataDir,'kalshi.credentials');
 function httpsJson(url,timeoutMs=7000){return new Promise((resolve,reject)=>{const req=https.get(url,{headers:{'User-Agent':'BTC-15M-Controller/7.0'}},res=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{if(res.statusCode<200||res.statusCode>=300)return reject(new Error(`HTTP ${res.statusCode}`));try{resolve(JSON.parse(d))}catch(e){reject(e)}})});req.setTimeout(timeoutMs,()=>req.destroy(new Error('Request timed out')));req.on('error',reject)})}
 function ensureDataDir(){fs.mkdirSync(dataDir,{recursive:true})}
 function saveCredentials(apiKeyId,privateKey){
@@ -19,14 +19,24 @@ function loadCredentials(){
 function clearCredentials(){try{if(fs.existsSync(credentialsFile))fs.rmSync(credentialsFile,{force:true})}catch{}liveArmed=false;liveFirstOrderConfirmed=false}
 function requireCreds(){const c=loadCredentials();if(!c?.apiKeyId||!c?.privateKey)throw new Error('Kalshi API credentials are not configured');return c}
 function createWindow(){mainWindow=new BrowserWindow({width:1500,height:1050,minWidth:1150,minHeight:800,title:'BTC 15-Minute Controller — Strategy Engine',webPreferences:{preload:path.join(__dirname,'preload.js'),nodeIntegration:false,contextIsolation:true,sandbox:true,devTools:false}});mainWindow.setMenuBarVisibility(false);mainWindow.loadFile(path.join(__dirname,'index.html'));mainWindow.webContents.on('will-navigate',e=>e.preventDefault());mainWindow.webContents.setWindowOpenHandler(()=>({action:'deny'}))}
-app.whenReady().then(()=>{ensureDataDir();session.defaultSession.webRequest.onHeadersReceived((d,cb)=>cb({responseHeaders:{...d.responseHeaders,'Content-Security-Policy':["default-src 'self'; connect-src 'self' https://api.elections.kalshi.com https://api.kalshi.com https://api.coinbase.com https://api.kraken.com; img-src 'self' data:; style-src 'self'; script-src 'self'"]}}));
+app.whenReady().then(()=>{ensureDataDir();session.defaultSession.webRequest.onHeadersReceived((d,cb)=>cb({responseHeaders:{...d.responseHeaders,'Content-Security-Policy':["default-src 'self'; connect-src 'self' https://external-api.kalshi.com https://api.elections.kalshi.com https://api.coinbase.com https://api.kraken.com; img-src 'self' data:; style-src 'self'; script-src 'self'"]}}));
 ipcMain.handle('kalshi:status',()=>({mode:liveArmed?'LIVE_ARMED':'LIVE_DISARMED',tradingEnabled:liveArmed,credentialStored:Boolean(loadCredentials()),secureStorage:safeStorage.isEncryptionAvailable(),firstOrderConfirmed:liveFirstOrderConfirmed}));
 ipcMain.handle('kalshi:configure',(_e,{apiKeyId,privateKey})=>{if(!apiKeyId||!privateKey)throw new Error('API key ID and private key are required');saveCredentials(apiKeyId,privateKey);liveArmed=false;liveFirstOrderConfirmed=false;return {credentialStored:true,secureStorage:true}});
 ipcMain.handle('kalshi:clearCredentials',()=>{clearCredentials();return {credentialStored:false}});
 ipcMain.handle('kalshi:arm',()=>{requireCreds();liveArmed=true;return {armed:true}});
-ipcMain.handle('kalshi:disarm',()=>{liveArmed=false;return {armed:false}});
+ipcMain.handle('kalshi:disarm',()=>{liveArmed=false;autoLive=false;return {armed:false}});
+ipcMain.handle('kalshi:autoStatus',()=>({autoLive,liveArmed,credentialStored:Boolean(loadCredentials())}));
+ipcMain.handle('kalshi:autoArm',()=>{requireCreds();if(!liveArmed)throw new Error('ARM LIVE first');autoLive=true;return {autoLive:true}});
+ipcMain.handle('kalshi:autoDisarm',()=>{autoLive=false;return {autoLive:false}});
 ipcMain.handle('kalshi:balance',async()=>{return await getBalance(requireCreds())});
 ipcMain.handle('kalshi:positions',async(_e,t)=>{return await getPositions(requireCreds(),t)});
+ipcMain.handle('kalshi:autoOrder',async(_e,p)=>{
+  if(!liveArmed||!autoLive)throw new Error('AUTO LIVE is disarmed');
+  const ticker=String(p?.ticker||''); const side=String(p?.side||''); const count=Number(p?.count); const priceCents=Number(p?.priceCents);
+  if(!ticker||!['bid','ask'].includes(side)||!Number.isInteger(count)||count<1||!Number.isFinite(priceCents))throw new Error('Invalid auto order request');
+  const clientOrderId='btc15-auto-'+crypto.randomUUID();
+  return {...await placeOrder(requireCreds(),{ticker,side,count,priceCents,clientOrderId,reduceOnly:Boolean(p?.reduceOnly),exchangeIndex:Number.isInteger(Number(p?.exchangeIndex))?Number(p.exchangeIndex):-1}),clientOrderId};
+});
 ipcMain.handle('kalshi:order',async(_e,p)=>{
   if(!liveArmed)throw new Error('LIVE execution is disarmed');
   const ticker=String(p?.ticker||'');const outcome=String(p?.outcome||'');const count=Number(p?.count);const priceCents=Number(p?.priceCents);
@@ -43,7 +53,7 @@ ipcMain.handle('kalshi:markets',async(_e,p={})=>{const limit=Math.min(Number(p.l
 ipcMain.handle('kalshi:market',async(_e,t)=>{if(typeof t!=='string'||!t)throw new Error('Missing market ticker');return await httpsJson(`https://api.elections.kalshi.com/trade-api/v2/markets/${encodeURIComponent(t)}`)});
 ipcMain.handle('kalshi:snapshot',async(_e,t)=>{if(typeof t!=='string'||!t)throw new Error('Missing market ticker');const s=encodeURIComponent(t);const [mr,br]=await Promise.all([httpsJson(`https://api.elections.kalshi.com/trade-api/v2/markets/${s}`),httpsJson(`https://api.elections.kalshi.com/trade-api/v2/markets/${s}/orderbook`)]);const m=mr.market||mr,b=br.orderbook||br;const pick=(...xs)=>{for(const x of xs){const n=Number(x);if(Number.isFinite(n))return n}return null};
  const yesBid=pick(m.yes_bid,m.yes_bid_dollars),yesAsk=pick(m.yes_ask,m.yes_ask_dollars),noBid=pick(m.no_bid,m.no_bid_dollars),noAsk=pick(m.no_ask,m.no_ask_dollars),last=pick(m.last_price,m.last_price_dollars);
- return {ticker:m.ticker,eventTicker:m.event_ticker,seriesTicker:m.series_ticker,title:m.title,subtitle:m.subtitle,status:m.status,closeTime:m.close_time,openTime:m.open_time,expirationTime:m.expiration_time,result:m.result,yesBid,yesAsk,noBid,noAsk,lastPrice:last,orderbook:{yes:Array.isArray(b?.yes)?b.yes:[],no:Array.isArray(b?.no)?b.no:[]},strike:m.floor_strike??m.strike??null,raw:{...m}};
+ return {ticker:m.ticker,eventTicker:m.event_ticker,seriesTicker:m.series_ticker,title:m.title,subtitle:m.subtitle,status:m.status,closeTime:m.close_time,openTime:m.open_time,expirationTime:m.expiration_time,result:m.result,exchangeIndex:Number.isInteger(Number(m.exchange_index))?Number(m.exchange_index):null,yesBid,yesAsk,noBid,noAsk,lastPrice:last,orderbook:{yes:Array.isArray(b?.yes)?b.yes:[],no:Array.isArray(b?.no)?b.no:[]},strike:m.floor_strike??m.strike??null,raw:{...m}};
 });
 ipcMain.handle('kalshi:orderbook',async(_e,t)=>{if(typeof t!=='string'||!t)throw new Error('Missing market ticker');return await httpsJson(`https://api.elections.kalshi.com/trade-api/v2/markets/${encodeURIComponent(t)}/orderbook`)});
 ipcMain.handle('records:read',()=>{ensureDataDir();if(!fs.existsSync(recordsFile))return [];try{const v=JSON.parse(fs.readFileSync(recordsFile,'utf8'));return Array.isArray(v)?v:[]}catch{return []}});
