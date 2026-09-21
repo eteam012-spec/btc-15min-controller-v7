@@ -182,7 +182,7 @@
   }
 
   let resizeTimer;
-  addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>els.forEach((el,i)=>{const p=safePoint(crew[i].targets[0],i);setXY(el,p.x,p.y);}),150);});
+  addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>els.forEach((el,i)=>{const p=freePoint(crew[i].targets[0],i);if(p)setXY(el,p.x,p.y);}),150);});
 
   els.forEach((el,i)=>{
     const p=freePoint(crew[i].targets[0],i*2); setXY(el,p.x,p.y,true);
