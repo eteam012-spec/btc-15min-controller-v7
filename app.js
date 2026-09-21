@@ -18,11 +18,24 @@ async function boot(){
  $('unlock').textContent=s.configured?'UNLOCK':'CREATE & UNLOCK';$('unlock').onclick=unlock;
 }
 async function unlock(){
- const p=$('pass').value;if(!p||p.length<12){$('lockMsg').textContent='Use at least 12 characters.';return}
- const s=await window.controllerAPI.authStatus();
- if(!s.configured) await window.controllerAPI.setPasscode(p); else if(!(await window.controllerAPI.verifyPasscode(p))){$('lockMsg').textContent='Incorrect passcode.';return}
- $('lock').hidden=true;$('app').hidden=false;
- allRecords=await window.controllerAPI.readRecords();loadLearning();renderLearning();await refreshKalshi(true);polling=setInterval(()=>refreshKalshi(false),3000);
+ const p=$('pass').value.trim();
+ $('lockMsg').textContent='';
+ if(!p||p.length<12){$('lockMsg').textContent='Use at least 12 characters.';return}
+ try{
+  const s=await window.controllerAPI.authStatus();
+  if(!s.safeStorageAvailable){$('lockMsg').textContent='Windows secure storage is unavailable. Close and reopen the app, then try again.';return}
+  if(!s.configured){
+   const ok=await window.controllerAPI.setPasscode(p);
+   if(!ok){$('lockMsg').textContent='Could not save the new passcode. Please try again.';return}
+  } else if(!(await window.controllerAPI.verifyPasscode(p))){
+   $('lockMsg').textContent='Incorrect passcode.';return
+  }
+  $('lock').hidden=true;$('app').hidden=false;
+  allRecords=await window.controllerAPI.readRecords();loadLearning();renderLearning();await refreshKalshi(true);polling=setInterval(()=>refreshKalshi(false),3000);
+ }catch(e){
+  console.error(e);
+  $('lockMsg').textContent='Passcode setup failed: '+(e?.message||'unknown error');
+ }
 }
 function loadLearning(){
  const m=allRecords.slice().reverse().find(r=>r.type==='LEARNING_MODEL');
