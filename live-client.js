@@ -52,13 +52,14 @@ function request({apiKeyId, privateKeyPem, method, path, body, timeoutMs=8000}) 
   });
 }
 
-async function getBalance(creds) {
-  return request({...creds, method:'GET', path:'/portfolio/balance'});
+async function getBalance(creds, exchangeIndex) {
+  const q = Number.isInteger(exchangeIndex) ? '?exchange_index=' + exchangeIndex : '';
+  return request({...creds, method:'GET', path:'/portfolio/balance' + q});
 }
 
-async function getPositions(creds, ticker) {
-  const q = ticker ? '?ticker=' + encodeURIComponent(ticker) : '';
-  return request({...creds, method:'GET', path:'/portfolio/positions' + q});
+async function getPositions(creds, ticker, exchangeIndex) {
+  const qs=[]; if(ticker)qs.push('ticker='+encodeURIComponent(ticker)); if(Number.isInteger(exchangeIndex))qs.push('exchange_index='+exchangeIndex);
+  const q=qs.length?'?'+qs.join('&'):''; return request({...creds, method:'GET', path:'/portfolio/positions'+q});
 }
 
 async function getOrder(creds, orderId) {
