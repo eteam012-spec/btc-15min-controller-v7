@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('controllerAPI', {
   authStatus: () => ipcRenderer.invoke('auth:status'),
   setPasscode: passcode => ipcRenderer.invoke('auth:set-passcode', passcode),
+  resetPasscode: () => ipcRenderer.invoke('auth:reset-passcode'),
   verifyPasscode: passcode => ipcRenderer.invoke('auth:verify', passcode),
   readRecords: () => ipcRenderer.invoke('records:read'),
   writeRecords: records => ipcRenderer.invoke('records:write', records),
