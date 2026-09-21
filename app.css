@@ -27,117 +27,101 @@ button { touch-action: manipulation; }
 }
 
 /* Raccoon crew v2 — hand-built animated characters that use the controller as their environment. */
+
+/* V9.1 Raccoon Crew — smooth SVG animation layer */
 .raccoon-deck{position:fixed;inset:0;z-index:25;pointer-events:none;overflow:hidden}
-.raccoon{
-  --fur:#85827b;--fur-hi:#a7a39a;--fur-dark:#5e5b55;--ink:#242321;--cream:#ded7ca;--pink:#9e6669;
-  position:fixed;width:112px;height:104px;pointer-events:none;user-select:none;
-  filter:drop-shadow(0 8px 7px #0009);will-change:left,top,transform;
-  transform-origin:50% 86%;opacity:0;
-  transition:left .55s cubic-bezier(.22,.75,.18,1),top .55s cubic-bezier(.22,.75,.18,1),opacity .25s ease;
+.raccoon.v3{
+  position:fixed;width:170px;height:145px;pointer-events:auto;user-select:none;
+  opacity:0;will-change:left,top,transform;transform-origin:50% 86%;
+  transition:left 1.25s cubic-bezier(.16,1,.3,1),top 1.25s cubic-bezier(.16,1,.3,1),transform .35s cubic-bezier(.22,1,.36,1),opacity .35s ease;
+  filter:drop-shadow(0 10px 8px #0009);
 }
-.raccoon.visible{opacity:1}
-.raccoon *{position:absolute;box-sizing:border-box}
-.raccoon .tail{
-  width:78px;height:35px;right:66px;top:57px;z-index:0;
-  border:7px solid var(--fur-dark);border-radius:65% 50% 60% 60%;
-  background:repeating-linear-gradient(90deg,var(--fur-hi) 0 12px,var(--ink) 12px 21px);
-  transform:rotate(-24deg);transform-origin:88% 50%;
+.raccoon.v3.visible{opacity:1}
+.raccoon.v3 .rac-scene{position:absolute;inset:0;transform-origin:50% 88%;will-change:transform}
+.raccoon-art{width:100%;height:100%;overflow:visible;display:block}
+.raccoon-art .rac-body,.raccoon-art .rac-head,.raccoon-art .rac-tail,
+.raccoon-art .rac-arm,.raccoon-art .rac-leg{transform-box:fill-box;transform-origin:center}
+.raccoon-art .rac-head{transform-origin:50% 90%}
+.raccoon-art .rac-tail{transform-origin:88% 55%}
+.raccoon-art .rac-arm{transform-origin:50% 18%}
+.raccoon-art .rac-leg{transform-origin:50% 12%}
+.raccoon-art .rac-eye{transform-box:fill-box;transform-origin:center}
+.raccoon.v3 .bubble{
+  position:absolute;left:108px;top:-8px;min-width:118px;max-width:220px;
+  padding:8px 11px;border:1px solid #4edbd5;border-radius:13px;
+  background:#0c151bf2;color:#f1f7f8;box-shadow:0 8px 24px #0009;
+  font:800 11px/1.2 Inter,system-ui,sans-serif;white-space:nowrap;
+  opacity:0;transform:translate3d(-4px,7px,0) scale(.94);
+  transform-origin:left bottom;transition:opacity .2s ease,transform .28s cubic-bezier(.16,1,.3,1);
+  pointer-events:none;
 }
-.raccoon .tail:after{content:"";position:absolute;right:-5px;top:2px;width:14px;height:25px;border-radius:50%;background:var(--fur-hi)}
-.raccoon .body{
-  width:58px;height:51px;left:29px;top:39px;background:var(--fur);
-  border:3px solid var(--ink);border-radius:48% 48% 42% 42%;z-index:2;
-  transform-origin:50% 100%;
-}
-.raccoon .belly{width:34px;height:34px;left:9px;top:8px;background:var(--cream);border-radius:50%;opacity:.9}
-.raccoon .head{
-  width:64px;height:52px;left:24px;top:8px;background:var(--fur-hi);
-  border:3px solid var(--ink);border-radius:48% 48% 44% 44%;z-index:5;
-  transform-origin:50% 85%;
-}
-.raccoon .ear{width:21px;height:22px;top:-10px;background:var(--fur-hi);border:3px solid var(--ink);border-radius:52% 52% 38% 38%;z-index:-1}
-.raccoon .ear.l{left:3px}.raccoon .ear.r{right:3px}
-.raccoon .ear:after{content:"";position:absolute;inset:5px;background:var(--pink);border-radius:50%}
-.raccoon .mask{left:4px;top:15px;width:53px;height:19px;background:var(--ink);border-radius:48%;transform:rotate(-2deg)}
-.raccoon .eye{width:8px;height:8px;top:20px;background:#f8d96b;border-radius:50%;box-shadow:0 0 7px #f8d96b;z-index:7;transform-origin:center}
-.raccoon .eye.l{left:15px}.raccoon .eye.r{right:15px}
-.raccoon .snout{width:29px;height:20px;left:17px;top:27px;background:var(--cream);border-radius:50%;z-index:7}
-.raccoon .nose{width:10px;height:7px;left:9px;top:2px;background:#171717;border-radius:55%;z-index:8}
-.raccoon .mouth{width:13px;height:7px;left:8px;top:9px;border-bottom:2px solid #171717;border-radius:0 0 50% 50%}
-.raccoon .leg{width:16px;height:28px;top:72px;background:var(--fur-dark);border:3px solid var(--ink);border-radius:45%;z-index:1;transform-origin:50% 10%}
-.raccoon .leg.l{left:33px}.raccoon .leg.r{left:68px}
-.raccoon .paw{width:20px;height:11px;bottom:-5px;background:var(--cream);border:2px solid var(--ink);border-radius:50%;z-index:3}
-.raccoon .paw.l{left:27px}.raccoon .paw.r{left:66px}
-.raccoon .arm{width:14px;height:32px;top:45px;background:var(--fur-dark);border:3px solid var(--ink);border-radius:50%;z-index:6;transform-origin:50% 12%}
-.raccoon .arm.l{left:17px;transform:rotate(25deg)}.raccoon .arm.r{right:12px;transform:rotate(-25deg)}
-.raccoon .hand{width:13px;height:10px;background:var(--cream);border:2px solid var(--ink);border-radius:50%;z-index:7}
-.raccoon .hand.l{left:11px;top:70px}.raccoon .hand.r{right:6px;top:69px}
-.raccoon .bubble{
-  left:80px;top:-23px;min-width:110px;max-width:220px;padding:7px 10px;
-  background:#101b21ee;border:1px solid #55c9c7;border-radius:10px;color:#eaf4f8;
-  font:800 11px/1.2 Inter,system-ui,sans-serif;opacity:0;transform:translateY(7px) scale(.95);
-  transition:opacity .18s,transform .18s;white-space:nowrap;box-shadow:0 8px 20px #0008;
-}
-.raccoon.show-bubble .bubble{opacity:1;transform:none}
+.raccoon.v3.show-bubble .bubble{opacity:1;transform:none}
 
-/* Character cycles: legs, arms, head, eyes and tail all move independently. */
-.raccoon.walk .leg.l{animation:rac-leg-a .22s ease-in-out infinite alternate}
-.raccoon.walk .leg.r{animation:rac-leg-b .22s ease-in-out infinite alternate}
-.raccoon.walk .arm.l{animation:rac-arm-a .22s ease-in-out infinite alternate}
-.raccoon.walk .arm.r{animation:rac-arm-b .22s ease-in-out infinite alternate}
-.raccoon.walk .body{animation:rac-body .44s ease-in-out infinite}
-.raccoon.walk .head{animation:rac-head .88s ease-in-out infinite}
-.raccoon.walk .tail{animation:rac-tail .44s ease-in-out infinite alternate}
-.raccoon.idle .tail{animation:rac-tail-idle 1.8s ease-in-out infinite alternate}
-.raccoon.idle .head{animation:rac-look 3.4s ease-in-out infinite}
-.raccoon.idle .eye{animation:rac-blink 4.2s ease-in-out infinite}
-.raccoon.climb .arms{animation:none}
-.raccoon.climb .arm.l{transform:rotate(-55deg);animation:rac-climb-arm .55s ease-in-out infinite alternate}
-.raccoon.climb .arm.r{transform:rotate(55deg);animation:rac-climb-arm2 .55s ease-in-out infinite alternate}
-.raccoon.climb .leg.l{animation:rac-climb-leg .55s ease-in-out infinite alternate}
-.raccoon.climb .leg.r{animation:rac-climb-leg2 .55s ease-in-out infinite alternate}
-.raccoon.peek .head{animation:rac-peek-head 1.7s ease-in-out infinite}
-.raccoon.peek .eye{animation:rac-blink 3.8s ease-in-out infinite}
-.raccoon.peek .tail{animation:rac-tail-peek 1.7s ease-in-out infinite}
-.raccoon.sit .body{transform:scaleY(.9) translateY(6px)}
-.raccoon.sit .leg{top:67px;transform:rotate(55deg)}
-.raccoon.sit .tail{transform:rotate(-8deg) translateY(5px)}
-.raccoon.tap .arm.r{transform:rotate(75deg);animation:rac-tap .55s ease-in-out infinite alternate}
-.raccoon.tap .head{animation:rac-tap-head .55s ease-in-out infinite alternate}
-.raccoon.excited .body{animation:rac-hop .55s ease-in-out infinite}
-.raccoon.excited .tail{animation:rac-tail-fast .28s ease-in-out infinite alternate}
-.raccoon.excited .arm{animation:rac-cheer .4s ease-in-out infinite alternate}
-.raccoon.alert .head{animation:rac-alert-head .32s ease-in-out infinite alternate}
-.raccoon.alert .tail{animation:rac-tail-alert .25s ease-in-out infinite alternate}
-.raccoon.point-up .arm.r{transform:rotate(-125deg);transform-origin:50% 10%}
-.raccoon.point-down .arm.r{transform:rotate(70deg);transform-origin:50% 10%}
-.raccoon.sleep .eye{transform:scaleY(.12)}
-.raccoon.sleep .mouth{height:2px}
+/* Full-body anticipation, follow-through and squash/stretch. */
+.raccoon.v3 .rac-scene{animation:rac-breathe 2.8s ease-in-out infinite}
+.raccoon.v3 .rac-head{animation:rac-head-float 3.2s ease-in-out infinite}
+.raccoon.v3 .rac-tail{animation:rac-tail-flow 1.65s cubic-bezier(.37,0,.63,1) infinite alternate}
+.raccoon.v3 .rac-eye{animation:rac-blink 4.6s ease-in-out infinite}
+.raccoon.v3 .rac-eye-r{animation-delay:.06s}
 
-@keyframes rac-leg-a{to{transform:rotate(28deg) translateY(-2px)}}
-@keyframes rac-leg-b{to{transform:rotate(-28deg) translateY(-2px)}}
-@keyframes rac-arm-a{to{transform:rotate(-18deg)}}
-@keyframes rac-arm-b{to{transform:rotate(18deg)}}
-@keyframes rac-body{50%{transform:translateY(-2px) rotate(1deg)}}
-@keyframes rac-head{50%{transform:translateY(-2px) rotate(-2deg)}}
-@keyframes rac-tail{to{transform:rotate(-2deg) translateY(-3px)}}
-@keyframes rac-tail-idle{to{transform:rotate(8deg)}}
-@keyframes rac-look{0%,100%{transform:rotate(0)}30%{transform:rotate(-5deg)}60%{transform:rotate(4deg)}}
-@keyframes rac-blink{0%,92%,100%{transform:scaleY(1)}95%{transform:scaleY(.08)}}
-@keyframes rac-climb-arm{to{transform:rotate(-95deg) translateY(-4px)}}
-@keyframes rac-climb-arm2{to{transform:rotate(95deg) translateY(-4px)}}
-@keyframes rac-climb-leg{to{transform:rotate(25deg)}}
-@keyframes rac-climb-leg2{to{transform:rotate(-25deg)}}
-@keyframes rac-peek-head{0%,100%{transform:translateX(0) rotate(0)}45%{transform:translateX(14px) rotate(7deg)}65%{transform:translateX(8px) rotate(3deg)}}
-@keyframes rac-tail-peek{50%{transform:rotate(18deg)}}
-@keyframes rac-tap{to{transform:rotate(105deg) translateY(5px)}}
-@keyframes rac-tap-head{to{transform:rotate(-8deg) translateY(2px)}}
-@keyframes rac-hop{50%{transform:translateY(-10px) rotate(2deg) scale(1.03)}}
-@keyframes rac-tail-fast{to{transform:rotate(12deg)}}
-@keyframes rac-cheer{to{transform:rotate(-75deg)}}
-@keyframes rac-alert-head{to{transform:translateX(5px)}}
-@keyframes rac-tail-alert{to{transform:rotate(28deg)}}
+.raccoon.v3.walking .rac-scene{animation:rac-walk-body .42s ease-in-out infinite}
+.raccoon.v3.walking .rac-head{animation:rac-walk-head .42s ease-in-out infinite}
+.raccoon.v3.walking .rac-tail{animation:rac-walk-tail .42s ease-in-out infinite alternate}
+.raccoon.v3.walking .rac-arm-l{animation:rac-arm-left .42s ease-in-out infinite alternate}
+.raccoon.v3.walking .rac-arm-r{animation:rac-arm-right .42s ease-in-out infinite alternate}
+.raccoon.v3.walking .rac-leg-l{animation:rac-leg-left .42s ease-in-out infinite alternate}
+.raccoon.v3.walking .rac-leg-r{animation:rac-leg-right .42s ease-in-out infinite alternate}
 
-@media(max-width:900px){.raccoon{transform:scale(.78);transform-origin:50% 86%}.raccoon .bubble{font-size:10px;min-width:82px}}
-@media(prefers-reduced-motion:reduce){.raccoon,.raccoon *{animation:none!important;transition:none!important}}
+.raccoon.v3.sitting .rac-scene{animation:rac-sit .9s cubic-bezier(.22,1,.36,1) both}
+.raccoon.v3.sitting .rac-tail{animation:rac-tail-rest 2s ease-in-out infinite alternate}
+.raccoon.v3.peeking .rac-scene{animation:rac-peek .95s cubic-bezier(.16,1,.3,1) both}
+.raccoon.v3.peeking .rac-head{animation:rac-peek-head 1.8s ease-in-out infinite}
+.raccoon.v3.tapping .rac-arm-r{animation:rac-tap-arm .48s ease-in-out infinite alternate}
+.raccoon.v3.tapping .rac-head{animation:rac-tap-head .9s ease-in-out infinite}
+.raccoon.v3.climbing .rac-arm-l{animation:rac-climb-left .52s ease-in-out infinite alternate}
+.raccoon.v3.climbing .rac-arm-r{animation:rac-climb-right .52s ease-in-out infinite alternate}
+.raccoon.v3.climbing .rac-leg-l{animation:rac-climb-leg-left .52s ease-in-out infinite alternate}
+.raccoon.v3.climbing .rac-leg-r{animation:rac-climb-leg-right .52s ease-in-out infinite alternate}
+.raccoon.v3.celebrate .rac-scene{animation:rac-celebrate .65s cubic-bezier(.22,1,.36,1) infinite}
+.raccoon.v3.celebrate .rac-arm-l{animation:rac-cheer-l .5s ease-in-out infinite alternate}
+.raccoon.v3.celebrate .rac-arm-r{animation:rac-cheer-r .5s ease-in-out infinite alternate}
+.raccoon.v3.alerting .rac-head{animation:rac-alert-head .32s ease-in-out infinite alternate}
+.raccoon.v3.alerting .rac-tail{animation:rac-alert-tail .25s ease-in-out infinite alternate}
+.raccoon.v3.attention .rac-scene{animation:rac-attention .45s cubic-bezier(.22,1,.36,1) both}
+
+@keyframes rac-breathe{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-1.6px) scale(1.008,.996)}}
+@keyframes rac-head-float{0%,100%{transform:rotate(0)}35%{transform:translateY(-1px) rotate(-1.4deg)}70%{transform:translateY(.5px) rotate(1.2deg)}}
+@keyframes rac-tail-flow{0%{transform:rotate(-8deg)}100%{transform:rotate(9deg)}}
+@keyframes rac-tail-rest{0%{transform:rotate(-3deg)}100%{transform:rotate(7deg)}}
+@keyframes rac-blink{0%,91%,100%{transform:scaleY(1)}94%{transform:scaleY(.08)}}
+@keyframes rac-walk-body{0%,100%{transform:translateY(1px) rotate(-1deg) scale(1,.99)}50%{transform:translateY(-4px) rotate(1deg) scale(1.025,.975)}}
+@keyframes rac-walk-head{0%,100%{transform:translateY(1px) rotate(2deg)}50%{transform:translateY(-3px) rotate(-2deg)}}
+@keyframes rac-walk-tail{0%{transform:rotate(-16deg) translateY(2px)}100%{transform:rotate(15deg) translateY(-2px)}}
+@keyframes rac-arm-left{from{transform:rotate(24deg)}to{transform:rotate(-22deg)}}
+@keyframes rac-arm-right{from{transform:rotate(-22deg)}to{transform:rotate(24deg)}}
+@keyframes rac-leg-left{from{transform:rotate(-18deg)}to{transform:rotate(18deg)}}
+@keyframes rac-leg-right{from{transform:rotate(18deg)}to{transform:rotate(-18deg)}}
+@keyframes rac-sit{0%{transform:translateY(0) scaleY(1)}45%{transform:translateY(9px) scaleY(.91)}100%{transform:translateY(7px) scaleY(.93)}}
+@keyframes rac-peek{0%{transform:translateX(0) rotate(0)}45%{transform:translateX(10px) rotate(3deg)}100%{transform:translateX(5px) rotate(1deg)}}
+@keyframes rac-peek-head{0%,100%{transform:rotate(0)}50%{transform:rotate(-7deg) translateY(-1px)}}
+@keyframes rac-tap-arm{from{transform:rotate(62deg)}to{transform:rotate(96deg) translateY(3px)}}
+@keyframes rac-tap-head{0%,100%{transform:rotate(2deg)}50%{transform:rotate(-5deg) translateY(2px)}}
+@keyframes rac-climb-left{from{transform:rotate(-38deg)}to{transform:rotate(-78deg) translateY(-3px)}}
+@keyframes rac-climb-right{from{transform:rotate(38deg)}to{transform:rotate(78deg) translateY(-3px)}}
+@keyframes rac-climb-leg-left{from{transform:rotate(-12deg)}to{transform:rotate(24deg)}}
+@keyframes rac-climb-leg-right{from{transform:rotate(12deg)}to{transform:rotate(-24deg)}}
+@keyframes rac-celebrate{0%,100%{transform:translateY(0) scale(1)}45%{transform:translateY(-10px) scale(1.035,.97)}65%{transform:translateY(-2px) scale(.98,1.02)}}
+@keyframes rac-cheer-l{from{transform:rotate(22deg)}to{transform:rotate(-58deg)}}
+@keyframes rac-cheer-r{from{transform:rotate(-22deg)}to{transform:rotate(58deg)}}
+@keyframes rac-alert-head{from{transform:rotate(-3deg)}to{transform:rotate(4deg) translateX(3px)}}
+@keyframes rac-alert-tail{from{transform:rotate(-18deg)}to{transform:rotate(25deg)}}
+@keyframes rac-attention{0%{transform:scale(1)}45%{transform:scale(1.06) rotate(-2deg)}100%{transform:scale(1) rotate(0)}}
+
+@media(max-width:900px){
+  .raccoon.v3{width:145px;height:123px}
+  .raccoon.v3 .bubble{font-size:10px;min-width:90px}
+}
+@media(prefers-reduced-motion:reduce){
+  .raccoon.v3,.raccoon.v3 *{animation:none!important;transition:none!important}
+}
 .live-panel{position:relative;overflow:hidden}
