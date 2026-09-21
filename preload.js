@@ -7,5 +7,6 @@ contextBridge.exposeInMainWorld('controllerAPI', {
   kalshiMarkets: params => ipcRenderer.invoke('kalshi:markets', params),
   kalshiMarket: ticker => ipcRenderer.invoke('kalshi:market', ticker),
   kalshiOrderbook: ticker => ipcRenderer.invoke('kalshi:orderbook', ticker),
-  kalshiSnapshot: ticker => ipcRenderer.invoke('kalshi:snapshot', ticker)
+  kalshiSnapshot: ticker => ipcRenderer.invoke('kalshi:snapshot', ticker),
+  btcSpot: () => ipcRenderer.invoke('btc:spot')
 });
