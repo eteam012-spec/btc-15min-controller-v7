@@ -145,3 +145,54 @@ button { touch-action: manipulation; }
 @keyframes rac-v4-attention{0%{transform:scale(1)}45%{transform:scale(1.055) rotate(-2deg)}100%{transform:scale(1) rotate(0)}}
 @media(max-width:900px){.raccoon.v4{width:112px;height:95px}.raccoon.v4 .bubble{font-size:9px;min-width:82px}}
 @media(prefers-reduced-motion:reduce){.raccoon.v4,.raccoon.v4 *{animation:none!important;transition:none!important}}
+
+/* V9.3 — 2D cartoon-grade crew: organic silhouettes, continuous secondary motion, and dashboard-scale placement. */
+.raccoon.v4{
+  width:118px;height:100px;
+  transition:opacity .35s ease,transform .25s cubic-bezier(.22,1,.36,1);
+  filter:drop-shadow(0 7px 6px rgba(0,0,0,.55));
+}
+.raccoon.v4 .rac-scene{will-change:transform}
+.raccoon.v4 .rac-scene{animation:rac-cartoon-breathe 2.35s cubic-bezier(.37,0,.63,1) infinite}
+.raccoon.v4 .rac-head{animation:rac-cartoon-head 3.1s cubic-bezier(.37,0,.63,1) infinite}
+.raccoon.v4 .rac-tail{animation:rac-cartoon-tail 1.35s cubic-bezier(.45,.05,.55,.95) infinite alternate}
+.raccoon.v4 .rac-arm,.raccoon.v4 .rac-leg{will-change:transform}
+.raccoon.v4 .rac-belly{transform-box:fill-box;transform-origin:50% 50%;animation:rac-cartoon-belly 2.35s ease-in-out infinite}
+.raccoon.v4 .rac-eye{animation:rac-cartoon-blink 5.2s ease-in-out infinite}
+.raccoon.v4 .rac-eye-r{animation-delay:.08s}
+.raccoon.v4.traveling .rac-scene{animation:rac-cartoon-gait .36s cubic-bezier(.37,0,.63,1) infinite}
+.raccoon.v4.traveling .rac-head{animation:rac-cartoon-gait-head .36s ease-in-out infinite}
+.raccoon.v4.traveling .rac-tail{animation:rac-cartoon-gait-tail .36s ease-in-out infinite alternate}
+.raccoon.v4.traveling .rac-arm-l{animation:rac-cartoon-arm-l .36s ease-in-out infinite alternate}
+.raccoon.v4.traveling .rac-arm-r{animation:rac-cartoon-arm-r .36s ease-in-out infinite alternate}
+.raccoon.v4.traveling .rac-leg-l{animation:rac-cartoon-leg-l .36s ease-in-out infinite alternate}
+.raccoon.v4.traveling .rac-leg-r{animation:rac-cartoon-leg-r .36s ease-in-out infinite alternate}
+.raccoon.v4.climbing .rac-body{animation:rac-cling-body .9s ease-in-out infinite}
+.raccoon.v4.climbing .rac-arm-l{animation:rac-cling-l .7s ease-in-out infinite alternate}
+.raccoon.v4.climbing .rac-arm-r{animation:rac-cling-r .7s ease-in-out infinite alternate}
+.raccoon.v4.climbing .rac-leg-l{animation:rac-cling-leg-l .7s ease-in-out infinite alternate}
+.raccoon.v4.climbing .rac-leg-r{animation:rac-cling-leg-r .7s ease-in-out infinite alternate}
+.raccoon.v4.peeking .rac-scene{animation:rac-peek-flow 1.25s cubic-bezier(.16,1,.3,1) both}
+.raccoon.v4.tapping .rac-arm-r{animation:rac-tap-flow .62s cubic-bezier(.37,0,.63,1) infinite alternate}
+.raccoon.v4.sitting .rac-scene{animation:rac-sit-flow 1s cubic-bezier(.16,1,.3,1) both}
+@keyframes rac-cartoon-breathe{0%,100%{transform:translate3d(0,0,0) scale(1,1)}50%{transform:translate3d(0,-1.4px,0) scale(1.012,.992)}}
+@keyframes rac-cartoon-head{0%,100%{transform:translate3d(0,0,0) rotate(0)}32%{transform:translate3d(-.8px,-1px,0) rotate(-1.2deg)}68%{transform:translate3d(.7px,.4px,0) rotate(1deg)}}
+@keyframes rac-cartoon-belly{0%,100%{transform:scale(1,1)}50%{transform:scale(1.025,.975)}}
+@keyframes rac-cartoon-tail{0%{transform:rotate(-8deg) translateY(1px)}100%{transform:rotate(10deg) translateY(-1px)}}
+@keyframes rac-cartoon-blink{0%,88%,100%{transform:scaleY(1)}91%{transform:scaleY(.08)}}
+@keyframes rac-cartoon-gait{0%,100%{transform:translate3d(0,1px,0) rotate(-1.2deg) scale(1,.985)}50%{transform:translate3d(0,-3px,0) rotate(1.2deg) scale(1.025,.975)}}
+@keyframes rac-cartoon-gait-head{0%,100%{transform:translateY(1px) rotate(2deg)}50%{transform:translateY(-2px) rotate(-2deg)}}
+@keyframes rac-cartoon-gait-tail{0%{transform:rotate(-17deg) translateX(-1px)}100%{transform:rotate(18deg) translateX(2px)}}
+@keyframes rac-cartoon-arm-l{from{transform:rotate(28deg)}to{transform:rotate(-25deg)}}
+@keyframes rac-cartoon-arm-r{from{transform:rotate(-25deg)}to{transform:rotate(28deg)}}
+@keyframes rac-cartoon-leg-l{from{transform:rotate(-20deg)}to{transform:rotate(20deg)}}
+@keyframes rac-cartoon-leg-r{from{transform:rotate(20deg)}to{transform:rotate(-20deg)}}
+@keyframes rac-cling-body{0%,100%{transform:translateY(1px) rotate(-1deg)}50%{transform:translateY(-2px) rotate(1deg)}}
+@keyframes rac-cling-l{from{transform:rotate(-28deg)}to{transform:rotate(-72deg) translateY(-3px)}}
+@keyframes rac-cling-r{from{transform:rotate(28deg)}to{transform:rotate(72deg) translateY(-3px)}}
+@keyframes rac-cling-leg-l{from{transform:rotate(-10deg)}to{transform:rotate(26deg)}}
+@keyframes rac-cling-leg-r{from{transform:rotate(10deg)}to{transform:rotate(-26deg)}}
+@keyframes rac-peek-flow{0%{transform:translate3d(-12px,7px,0) rotate(-4deg)}55%{transform:translate3d(6px,-1px,0) rotate(3deg)}100%{transform:translate3d(0,0,0) rotate(0)}}
+@keyframes rac-tap-flow{from{transform:rotate(55deg)}to{transform:rotate(92deg) translateY(3px)}}
+@keyframes rac-sit-flow{0%{transform:translateY(-4px) scale(1.01,.99)}60%{transform:translateY(5px) scale(1,.96)}100%{transform:translateY(3px) scale(1,.97)}}
+@media(max-width:900px){.raccoon.v4{width:100px;height:85px}.raccoon.v4 .bubble{font-size:9px}}
