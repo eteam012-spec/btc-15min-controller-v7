@@ -1,3 +1,5 @@
+window.addEventListener('error',e=>{const el=document.getElementById('feed');if(el)el.textContent='BOOT ERROR: '+(e?.error?.message||e?.message||'renderer error')});
+window.addEventListener('unhandledrejection',e=>{const el=document.getElementById('feed');if(el)el.textContent='BOOT ERROR: '+(e?.reason?.message||String(e?.reason||'promise error'))});
 const DEFAULTS={btc:76753,target:76448.22};
 const BASE_WEIGHTS={strike:1.0,market:1.0,orderbook:0.85,marketMomentum:0.75,btcMomentum:0.75,reversal:0.8};
 let minute=1,windowNumber=1,windowId='',windowStart='',rows=[],allRecords=[];
@@ -13,7 +15,9 @@ const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const direction=n=>n>=0?'UP':'DOWN';
 
 async function startApp(){
- allRecords=await window.controllerAPI.readRecords();
+ if(!window.controllerAPI)throw new Error('controller API unavailable — preload did not initialize');
+ const read=window.controllerAPI.readRecords();
+ allRecords=await Promise.race([read,new Promise((_,rej)=>setTimeout(()=>rej(new Error('records read timed out after 5s')),5000))]);
  // Window numbers are a daily session counter, not a permanent counter.
  // Never carry yesterday's window number into a new trading day.
  const todayRecords=allRecords.filter(r=>r.date===day()&&Number.isFinite(Number(r.windowNumber)));
@@ -164,7 +168,8 @@ $('disarmLive').onclick=disarmLive;
 $('liveBalance').onclick=liveBalance;
 $('liveExecute').onclick=liveExecute;
 
-startApp();liveSetup();
+startApp().catch(e=>{const msg='BOOT ERROR: '+(e?.message||e);$('feed').textContent=msg;$('btcSource').textContent='LIVE BTC: NOT STARTED';$('ticker').textContent='BOOT FAILED';$('contractState').textContent='BOOT FAILED';});
+liveSetup().catch(e=>{$('liveStatus').textContent='LIVE SETUP ERROR: '+(e?.message||e)});
 
 function autoResetDay(){if(autoDay!==day()){autoDay=day();dailyLossCents=0;}}
 function autoSettings(){return {riskPct:clamp(Number($('liveRiskPct').value)||2,0.5,10),maxSpend:Math.max(0.01,Number($('liveMaxSpend').value)||1),maxExposure:Math.max(0.01,Number($('liveMaxExposure').value)||2),dailyLoss:Math.max(0.01,Number($('liveDailyLoss').value)||2)}}
