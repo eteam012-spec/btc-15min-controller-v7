@@ -1,5 +1,5 @@
 const { app, BrowserWindow, ipcMain, session, safeStorage, dialog } = require('electron');
-const https=require('https');const path=require('path');const fs=require('fs');const crypto=require('crypto');const {getBalance,getPositions,getOrder,placeIOC,placeOrder}=require('./live-client');
+const https=require('https');const path=require('path');const fs=require('fs');const crypto=require('crypto');const {getBalance,getPositions,getFills,getSettlements,getOrder,placeIOC,placeOrder}=require('./live-client');
 let mainWindow;let liveArmed=false;let autoLive=false;let liveFirstOrderConfirmed=false;const dataDir=path.join(app.getPath('userData'),'data');const recordsFile=path.join(dataDir,'records.json');const credentialsFile=path.join(dataDir,'kalshi.credentials');
 function httpsJson(url,timeoutMs=7000){return new Promise((resolve,reject)=>{const req=https.get(url,{headers:{'User-Agent':'BTC-15M-Controller/7.0'}},res=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{if(res.statusCode<200||res.statusCode>=300)return reject(new Error(`HTTP ${res.statusCode}`));try{resolve(JSON.parse(d))}catch(e){reject(e)}})});req.setTimeout(timeoutMs,()=>req.destroy(new Error('Request timed out')));req.on('error',reject)})}
 function ensureDataDir(){fs.mkdirSync(dataDir,{recursive:true})}
@@ -29,6 +29,8 @@ ipcMain.handle('kalshi:autoStatus',()=>({autoLive,liveArmed,credentialStored:Boo
 ipcMain.handle('kalshi:autoArm',()=>{requireCreds();if(!liveArmed)throw new Error('ARM LIVE first');autoLive=true;return {autoLive:true}});
 ipcMain.handle('kalshi:autoDisarm',()=>{autoLive=false;return {autoLive:false}});
 ipcMain.handle('kalshi:balance',async(_e,p={})=>{return await getBalance(requireCreds(),Number.isInteger(Number(p.exchangeIndex))?Number(p.exchangeIndex):undefined)});
+ipcMain.handle('kalshi:fills',async(_e,p={})=>getFills(requireCreds(),p||{}));
+ipcMain.handle('kalshi:settlements',async(_e,p={})=>getSettlements(requireCreds(),p||{}));
 ipcMain.handle('kalshi:positions',async(_e,p)=>{const ticker=typeof p==='string'?p:p?.ticker;const exchangeIndex=typeof p==='object'&&p!==null&&Number.isInteger(Number(p.exchangeIndex))?Number(p.exchangeIndex):undefined;return await getPositions(requireCreds(),ticker,exchangeIndex)});
 ipcMain.handle('kalshi:autoOrder',async(_e,p)=>{
   if(!liveArmed||!autoLive)throw new Error('AUTO LIVE is disarmed');
