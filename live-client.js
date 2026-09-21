@@ -1,11 +1,12 @@
 const crypto = require('crypto');
 const fs = require('fs');
 
-const PROD_BASE = 'https://api.elections.kalshi.com/trade-api/v2';
+const PROD_BASE = 'https://external-api.kalshi.com/trade-api/v2';
 const ORDER_PATH = '/portfolio/events/orders';
 
 function sign(privateKeyPem, timestampMs, method, path) {
-  const msg = Buffer.from(String(timestampMs) + method.toUpperCase() + path, 'utf8');
+  const signPath = ('/trade-api/v2' + path).split('?')[0];
+  const msg = Buffer.from(String(timestampMs) + method.toUpperCase() + signPath, 'utf8');
   const signer = crypto.createSign('sha256');
   signer.update(msg);
   signer.end();
@@ -64,25 +65,30 @@ async function getOrder(creds, orderId) {
   return request({...creds, method:'GET', path:'/portfolio/orders/' + encodeURIComponent(orderId)});
 }
 
-async function placeIOC(creds, {ticker, outcome, count, priceCents, clientOrderId}) {
-  if(!ticker || !['UP','DOWN'].includes(outcome)) throw new Error('Invalid live order parameters');
+async function placeOrder(creds, {ticker, side, count, priceCents, clientOrderId, reduceOnly=false, exchangeIndex}) {
+  if(!ticker || !['bid','ask'].includes(side)) throw new Error('Invalid live order parameters');
   if(!Number.isInteger(count) || count < 1) throw new Error('Count must be a positive integer');
   if(!Number.isFinite(priceCents) || priceCents < 1 || priceCents > 99) throw new Error('Price must be 1–99 cents');
 
-  // V2 quotes the YES leg: bid = buy YES (UP), ask = sell YES / economically buy NO (DOWN).
-  const side = outcome === 'UP' ? 'bid' : 'ask';
   const body = {
     ticker,
     client_order_id: clientOrderId,
     side,
-    count: String(count),
+    count: Number(count).toFixed(2),
     price: (priceCents / 100).toFixed(4),
     time_in_force: 'immediate_or_cancel',
     self_trade_prevention_type: 'taker_at_cross',
     cancel_order_on_pause: true,
-    reduce_only: false
+    reduce_only: Boolean(reduceOnly),
+    post_only: false,
+    exchange_index: Number.isInteger(exchangeIndex) ? exchangeIndex : -1
   };
   return request({...creds, method:'POST', path:ORDER_PATH, body});
 }
 
-module.exports = { getBalance, getPositions, getOrder, placeIOC };
+async function placeIOC(creds, {ticker, outcome, count, priceCents, clientOrderId, reduceOnly=false, exchangeIndex}) {
+  const side = outcome === 'UP' ? 'bid' : 'ask';
+  return placeOrder(creds,{ticker,side,count,priceCents,clientOrderId,reduceOnly,exchangeIndex});
+}
+
+module.exports = { getBalance, getPositions, getOrder, placeIOC, placeOrder };
