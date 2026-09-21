@@ -28,8 +28,8 @@ ipcMain.handle('kalshi:disarm',()=>{liveArmed=false;autoLive=false;return {armed
 ipcMain.handle('kalshi:autoStatus',()=>({autoLive,liveArmed,credentialStored:Boolean(loadCredentials())}));
 ipcMain.handle('kalshi:autoArm',()=>{requireCreds();if(!liveArmed)throw new Error('ARM LIVE first');autoLive=true;return {autoLive:true}});
 ipcMain.handle('kalshi:autoDisarm',()=>{autoLive=false;return {autoLive:false}});
-ipcMain.handle('kalshi:balance',async()=>{return await getBalance(requireCreds())});
-ipcMain.handle('kalshi:positions',async(_e,t)=>{return await getPositions(requireCreds(),t)});
+ipcMain.handle('kalshi:balance',async(_e,p={})=>{return await getBalance(requireCreds(),Number.isInteger(Number(p.exchangeIndex))?Number(p.exchangeIndex):undefined)});
+ipcMain.handle('kalshi:positions',async(_e,p)=>{const ticker=typeof p==='string'?p:p?.ticker;const exchangeIndex=typeof p==='object'&&p!==null&&Number.isInteger(Number(p.exchangeIndex))?Number(p.exchangeIndex):undefined;return await getPositions(requireCreds(),ticker,exchangeIndex)});
 ipcMain.handle('kalshi:autoOrder',async(_e,p)=>{
   if(!liveArmed||!autoLive)throw new Error('AUTO LIVE is disarmed');
   const ticker=String(p?.ticker||''); const side=String(p?.side||''); const count=Number(p?.count); const priceCents=Number(p?.priceCents);
