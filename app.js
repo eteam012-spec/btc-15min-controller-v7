@@ -4,6 +4,7 @@ let minute=1,windowNumber=1,windowId='',windowStart='',rows=[],allRecords=[];
 let liveTicker=null, liveMarket=null, lastLiveAt=0, lastBtcAt=0, polling=null, switching=false;
 let lastFeature=null, paperPosition=null, pendingWindows=new Map();
 let learning={version:1,completed:0,weights:{...BASE_WEIGHTS},windows:[],accuracy:0};
+let autoLive=false,noTradeWindow=false,autoBusy=false,autoEntryDoneTicker=null,autoPosition=null,lastAutoActionAt=0,dailyLossCents=0,autoDay=day();
 const $=id=>document.getElementById(id);
 const money=n=>'$'+Number(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
 const pct=n=>Number.isFinite(n)?`${n.toFixed(1)}%`:'—';
@@ -28,7 +29,7 @@ function loadLearning(){
  if(m&&m.weights){learning={version:Number(m.version)||1,completed:Number(m.completed)||0,weights:{...BASE_WEIGHTS,...m.weights},windows:Array.isArray(m.windows)?m.windows:[],accuracy:Number(m.accuracy)||0};}
 }
 function modelRecord(){return {type:'LEARNING_MODEL',version:learning.version,completed:learning.completed,weights:learning.weights,accuracy:learning.accuracy,updatedAt:new Date().toISOString(),windows:learning.windows.slice(-250)}}
-function startWindow(market){minute=1;windowId='W-'+Date.now();windowStart=new Date().toISOString();rows=[];paperPosition=null;liveMarket=market||liveMarket;$('btc').value='';$('target').value=extractTarget(liveMarket) ?? DEFAULTS.target;render();calc()}
+function startWindow(market){minute=1;windowId='W-'+Date.now();windowStart=new Date().toISOString();rows=[];paperPosition=null;autoPosition=null;autoEntryDoneTicker=null;noTradeWindow=false;liveMarket=market||liveMarket;$('btc').value='';$('target').value=extractTarget(liveMarket) ?? DEFAULTS.target;render();calc()}
 function extractTarget(m){if(!m)return null;for(const x of [m.strike,m.raw?.floor_strike,m.raw?.strike,m.raw?.floor_strike_dollars]){const n=Number(x);if(Number.isFinite(n)&&n>1000)return n}return null}
 function num(v){const n=Number(v);return Number.isFinite(n)?n:null}
 function pctPrice(v){const n=num(v);return n===null?null:(n<=1?n*100:n)}
@@ -129,10 +130,7 @@ async function armLive(){
   try{const r=await window.controllerAPI.kalshiArm();$('liveStatus').textContent=r.armed?'LIVE EXECUTION: ARMED':'LIVE EXECUTION: DISARMED'}catch(e){$('liveStatus').textContent='ARM ERROR: '+e.message}
 }
 async function disarmLive(){try{await window.controllerAPI.kalshiDisarm();$('liveStatus').textContent='LIVE EXECUTION: DISARMED'}catch(e){$('liveStatus').textContent='DISARM ERROR: '+e.message}}
-async function liveBalance(){
-  try{const r=await window.controllerAPI.kalshiBalance();const cents=Number(r.balance);$('liveStatus').textContent=Number.isFinite(cents)?('LIVE BALANCE: +(cents/100).toFixed(2)):'BALANCE RESPONSE RECEIVED';}
-  catch(e){$('liveStatus').textContent='BALANCE ERROR: '+e.message}
-}
+async function liveBalance(){try{const r=await window.controllerAPI.kalshiBalance(Number.isInteger(liveMarket?.exchangeIndex)?liveMarket.exchangeIndex:undefined);const cents=Number(r.balance);$('liveStatus').textContent=Number.isFinite(cents)?`LIVE BALANCE: ${(cents/100).toFixed(2)}`:'BALANCE RESPONSE RECEIVED';return cents}catch(e){$('liveStatus').textContent='BALANCE ERROR: '+e.message;return null}}
 function liveQuoteCents(outcome){
   const yes=(liveMarket?.orderbook?.yes||[]).map(parseLevel).filter(Boolean);
   const no=(liveMarket?.orderbook?.no||[]).map(parseLevel).filter(Boolean);
@@ -151,8 +149,8 @@ async function liveExecute(){
     const priceCents=liveQuoteCents(f.pick);
     if(priceCents===null)throw new Error('No executable live quote available');
     const count=Math.floor((maxSpend*100)/priceCents);
-    if(count<1)throw new Error('Max spend +maxSpend.toFixed(2)+' is below one contract at '+priceCents+'¢');
-    $('liveStatus').textContent='LIVE ORDER PREVIEW: '+f.pick+' • '+count+' contract(s) • '+priceCents+'¢ max • +(count*priceCents/100).toFixed(2)+' max cost • '+liveTicker;
+    if(count<1)throw new Error(`Max spend ${maxSpend.toFixed(2)} is below one contract at ${priceCents}¢`);
+    $('liveStatus').textContent=`LIVE ORDER PREVIEW: ${f.pick} • ${count} contract(s) • ${priceCents}¢ max • ${(count*priceCents/100).toFixed(2)} max cost • ${liveTicker}`;
     const r=await window.controllerAPI.kalshiOrder({ticker:liveTicker,outcome:f.pick,count,priceCents});
     const filled=Number(r.fill_count??r.filled_count??r.fill_count_fp??0);
     $('liveStatus').textContent='LIVE ORDER SUBMITTED • '+f.pick+' • '+count+' contracts • '+priceCents+'¢ • order '+(r.order_id||'accepted')+' • filled '+filled;
@@ -166,4 +164,30 @@ $('disarmLive').onclick=disarmLive;
 $('liveBalance').onclick=liveBalance;
 $('liveExecute').onclick=liveExecute;
 
-startApp();
+startApp();liveSetup();
+
+function autoResetDay(){if(autoDay!==day()){autoDay=day();dailyLossCents=0;}}
+function autoSettings(){return {riskPct:clamp(Number($('liveRiskPct').value)||2,0.5,10),maxSpend:Math.max(0.01,Number($('liveMaxSpend').value)||1),maxExposure:Math.max(0.01,Number($('liveMaxExposure').value)||2),dailyLoss:Math.max(0.01,Number($('liveDailyLoss').value)||2)}}
+function autoPositionFromResponse(p){const list=p?.market_positions||p?.positions||p?.market_positions?.positions||[];const a=Array.isArray(list)?list:[p];const x=a.find(v=>String(v.ticker||v.market_ticker||'')===liveTicker)||a[0];if(!x)return null;const pos=Number(x.position??x.yes_position??x.position_fp??0);const pnl=Number(x.realized_pnl??x.realized_pnl_dollars??0);if(Number.isFinite(pnl))dailyLossCents=Math.max(0,Math.round(Math.max(0,-pnl)*100));return Number.isFinite(pos)&&pos!==0?{ticker:liveTicker,yesPosition:pos}:null}
+async function autoReconcile(){if(!autoLive||!liveTicker)return;try{const p=await window.controllerAPI.kalshiPositions(liveTicker, Number.isInteger(liveMarket?.exchangeIndex)?liveMarket.exchangeIndex:undefined);autoPosition=autoPositionFromResponse(p);$('autoStatus').textContent=`AUTO LIVE: ${autoLive?'ON':'OFF'} • NO-TRADE: ${noTradeWindow?'ON':'OFF'} • POSITION: ${autoPosition?(autoPosition.yesPosition>0?'YES/UP':'NO/DOWN'):'FLAT'}`;}catch(e){$('autoStatus').textContent='AUTO LIVE: '+e.message}}
+function autoEntryPrice(outcome){const bs=bookStats(liveMarket);if(outcome==='UP'&&bs.noBid!==null)return clamp(Math.ceil(100-bs.noBid),1,99);if(outcome==='DOWN'&&bs.yesBid!==null)return clamp(Math.ceil(100-bs.yesBid),1,99);return null}
+async function autoOrder(outcome,priceCents,count,reduceOnly=false){const side=outcome==='UP'?'bid':'ask';const r=await window.controllerAPI.kalshiAutoOrder({ticker:liveTicker,side,count,priceCents,reduceOnly,exchangeIndex:Number.isInteger(liveMarket?.exchangeIndex)?liveMarket.exchangeIndex:-1});const filled=Number(r.fill_count??0);rows.push({id:`${windowId}:AUTO:${Date.now()}`,date:day(),timestamp:new Date().toISOString(),windowId,windowStart,minute,marketTicker:liveTicker,type:reduceOnly?'AUTO_EXIT':'AUTO_ENTRY',side:outcome,priceCents,count,fillCount:filled,orderId:r.order_id||'',result:filled>0?'FILLED':'UNFILLED'});await persist();return {...r,filled}}
+async function autoTradeTick(){autoResetDay();if(!autoLive||autoBusy||!liveTicker||!liveMarket)return;autoBusy=true;try{const f=calc();const s=autoSettings();if(Date.now()-lastLiveAt>7000||Date.now()-lastBtcAt>7000){$('autoStatus').textContent='AUTO LIVE: PAUSED • STALE DATA';return}if(dailyLossCents>=s.dailyLoss*100){$('autoStatus').textContent='AUTO LIVE: HALTED • DAILY LOSS LIMIT';return}await autoReconcile();
+ const secs=f.secondsToClose;
+ // Exits have priority. A meaningful reversal/high-risk signal flattens an existing position.
+ if(autoPosition && (f.risk==='HIGH'||f.risk==='CRITICAL'||(autoPosition.yesPosition>0&&f.pick==='DOWN')||(autoPosition.yesPosition<0&&f.pick==='UP')||(secs!==null&&secs<20))){
+   const exitOutcome=autoPosition.yesPosition>0?'DOWN':'UP';const p=autoEntryPrice(exitOutcome);const qty=Math.max(1,Math.floor(Math.abs(autoPosition.yesPosition)));if(p!==null&&Date.now()-lastAutoActionAt>3000){await autoOrder(exitOutcome,p,qty,true);lastAutoActionAt=Date.now();await autoReconcile()}return;
+ }
+ // No-trade blocks new entries, but does not block protective exits.
+ if(noTradeWindow||autoEntryDoneTicker===liveTicker)return;
+ if(f.action!=='PAPER READY'||(secs!==null&&secs<90)||f.confidence<65)return;
+ const balance=await liveBalance();if(!Number.isFinite(balance))return;
+ const budgetCents=Math.floor(Math.min(s.maxSpend*100,(balance*s.riskPct/100),s.maxExposure*100));const p=autoEntryPrice(f.pick);if(p===null||budgetCents<p)return;
+ const count=Math.max(1,Math.floor(budgetCents/p));const result=await autoOrder(f.pick,p,count,false);if(result.filled>0){autoEntryDoneTicker=liveTicker;await autoReconcile()}lastAutoActionAt=Date.now();
+ }catch(e){$('autoStatus').textContent='AUTO LIVE ERROR • DISARMED: '+e.message;autoLive=false;try{await window.controllerAPI.kalshiAutoDisarm()}catch{}}finally{autoBusy=false}}
+async function armAuto(){try{await window.controllerAPI.kalshiAutoArm();autoLive=true;noTradeWindow=false;$('autoStatus').textContent='AUTO LIVE: ON • watching for eligible entries';}catch(e){$('autoStatus').textContent='AUTO ARM ERROR: '+e.message}}
+async function disarmAuto(){autoLive=false;try{await window.controllerAPI.kalshiAutoDisarm()}catch{}$('autoStatus').textContent='AUTO LIVE: OFF • NO-TRADE: '+(noTradeWindow?'ON':'OFF')}
+function toggleNoTrade(){noTradeWindow=!noTradeWindow;$('autoStatus').textContent=`AUTO LIVE: ${autoLive?'ON':'OFF'} • NO-TRADE: ${noTradeWindow?'ON':'OFF'} • POSITION: ${autoPosition?'OPEN':'FLAT'}`;$('noTrade').textContent=noTradeWindow?'ALLOW TRADING THIS WINDOW':'NO-TRADE THIS WINDOW'}
+$('autoArm').onclick=armAuto;$('autoDisarm').onclick=disarmAuto;$('noTrade').onclick=toggleNoTrade;
+setInterval(autoTradeTick,1500);
+setInterval(autoReconcile,5000);
