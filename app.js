@@ -153,6 +153,8 @@ async function liveExecute(){
     if(!liveTicker||!liveMarket)throw new Error('No active Kalshi contract');
     const maxSpend=Math.max(0.01,Number($('liveMaxSpend').value)||2);
     const priceCents=liveQuoteCents(f.pick);
+    const maxEntryPrice=clamp(Number($('liveMaxEntryPrice').value)||85,1,99);
+    if(priceCents!==null&&priceCents>maxEntryPrice)throw new Error(`Entry price ${priceCents}¢ exceeds max entry ${maxEntryPrice.toFixed(0)}¢ — no chase`);
     if(priceCents===null)throw new Error('No executable live quote available');
     const count=Math.floor((maxSpend*100)/priceCents);
     if(count<1)throw new Error(`Max spend ${maxSpend.toFixed(2)} is below one contract at ${priceCents}¢`);
@@ -174,7 +176,7 @@ startApp().catch(e=>{const msg='BOOT ERROR: '+(e?.message||e);$('feed').textCont
 liveSetup().catch(e=>{$('liveStatus').textContent='LIVE SETUP ERROR: '+(e?.message||e)});
 
 function autoResetDay(){if(autoDay!==day()){autoDay=day();dailyLossCents=0;}}
-function autoSettings(){return {riskPct:clamp(Number($('liveRiskPct').value)||2,0.5,10),maxSpend:Math.max(0.01,Number($('liveMaxSpend').value)||1),maxExposure:Math.max(0.01,Number($('liveMaxExposure').value)||2),dailyLoss:Math.max(0.01,Number($('liveDailyLoss').value)||2)}}
+function autoSettings(){return {riskPct:clamp(Number($('liveRiskPct').value)||2,0.5,10),maxSpend:Math.max(0.01,Number($('liveMaxSpend').value)||1),maxExposure:Math.max(0.01,Number($('liveMaxExposure').value)||2),dailyLoss:Math.max(0.01,Number($('liveDailyLoss').value)||2),maxEntryPrice:clamp(Number($('liveMaxEntryPrice').value)||85,1,99)}}
 function autoPositionFromResponse(p){const list=Array.isArray(p?.market_positions)?p.market_positions:Array.isArray(p?.positions)?p.positions:[];const x=list.find(v=>String(v.ticker||v.market_ticker||'')===liveTicker);if(!x)return null;const pos=Number(x.position_fp??x.position??x.yes_position??0);return Number.isFinite(pos)&&pos!==0?{ticker:liveTicker,yesPosition:pos}:null}
 async function refreshDailyLoss(){try{const now=Math.floor(Date.now()/1000),start=new Date();start.setHours(0,0,0,0);const s=await window.controllerAPI.kalshiSettlements({min_ts:Math.floor(start.getTime()/1000),max_ts:now,limit:200});const arr=Array.isArray(s?.settlements)?s.settlements:[];dailyLossCents=Math.max(0,Math.round(arr.reduce((sum,x)=>{const revenue=Number(x.revenue)||0,cost=(Number(x.yes_total_cost)||0)+(Number(x.no_total_cost)||0),fee=Number(String(x.fee_cost||0))*100;return sum+Math.min(0,revenue-cost-fee)},0)));}catch(e){dailyLossCents=0;}}
 async function autoReconcile(){if(!autoLive||!liveTicker)return;try{await refreshDailyLoss();const p=await window.controllerAPI.kalshiPositions(liveTicker, Number.isInteger(liveMarket?.exchangeIndex)?liveMarket.exchangeIndex:undefined);autoPosition=autoPositionFromResponse(p);$('autoStatus').textContent=`AUTO LIVE: ${autoLive?'ON':'OFF'} • NO-TRADE: ${noTradeWindow?'ON':'OFF'} • POSITION: ${autoPosition?(autoPosition.yesPosition>0?'YES/UP':'NO/DOWN'):'FLAT'}`;}catch(e){$('autoStatus').textContent='AUTO LIVE: '+e.message}}
@@ -190,7 +192,7 @@ async function autoTradeTick(){autoResetDay();if(!autoLive||autoBusy||!liveTicke
  if(noTradeWindow||autoEntryDoneTicker===liveTicker)return;
  if(f.action!=='PAPER READY'||(secs!==null&&secs<90)||f.confidence<65)return;
  const balance=await liveBalance();if(!Number.isFinite(balance))return;
- const budgetCents=Math.floor(Math.min(s.maxSpend*100,(balance*s.riskPct/100),s.maxExposure*100));const p=autoEntryPrice(f.pick);if(p===null||budgetCents<p)return;
+ const budgetCents=Math.floor(Math.min(s.maxSpend*100,(balance*s.riskPct/100),s.maxExposure*100));const p=autoEntryPrice(f.pick);if(p===null||p>s.maxEntryPrice){$('autoStatus').textContent=`AUTO LIVE: ENTRY BLOCKED • ${p===null?'NO QUOTE':`${p}¢ > ${s.maxEntryPrice.toFixed(0)}¢ MAX ENTRY`}`;return}if(budgetCents<p)return;
  const count=Math.max(1,Math.floor(budgetCents/p));const result=await autoOrder(f.pick,p,count,false);if(result.filled>0){autoEntryDoneTicker=liveTicker;await autoReconcile()}lastAutoActionAt=Date.now();
  }catch(e){$('autoStatus').textContent='AUTO LIVE ERROR • DISARMED: '+e.message;autoLive=false;try{await window.controllerAPI.kalshiAutoDisarm()}catch{}}finally{autoBusy=false}}
 async function armAuto(){try{await window.controllerAPI.kalshiAutoArm();autoLive=true;noTradeWindow=false;$('autoStatus').textContent='AUTO LIVE: ON • watching for eligible entries';}catch(e){$('autoStatus').textContent='AUTO ARM ERROR: '+e.message}}
