@@ -34,3 +34,45 @@ button { touch-action: manipulation; }
 @keyframes raccoonFall{0%{transform:translate(0,-20vh) rotate(0)}50%{transform:translate(-30vw,35vh) rotate(-20deg)}100%{transform:translate(-80vw,90vh) rotate(-45deg)}}
 @keyframes raccoonDrop{0%{transform:translateY(0) rotate(-8deg)}15%{transform:translateY(55vh) rotate(12deg)}100%{transform:translateY(115vh) rotate(40deg)}}
 .live-panel{position:relative;overflow:hidden}
+
+/* Animated raccoon crew — vector/CSS characters, not emoji or stickers */
+.raccoon-deck{position:fixed;inset:0;z-index:25;pointer-events:none;overflow:hidden}
+.raccoon{--fur:#8d8a83;--fur2:#68655f;--dark:#242424;--cream:#d8d2c6;position:absolute;width:92px;height:92px;pointer-events:auto;user-select:none;filter:drop-shadow(0 7px 7px #0008);transform-origin:50% 80%;will-change:transform,left,top}
+.raccoon *{position:absolute;box-sizing:border-box}
+.raccoon .tail{width:72px;height:32px;right:53px;bottom:4px;border:7px solid var(--fur2);border-radius:60% 45% 55% 65%;transform:rotate(-22deg);background:repeating-linear-gradient(90deg,var(--fur) 0 10px,var(--dark) 10px 18px);z-index:-1}
+.raccoon .body{width:52px;height:48px;left:21px;top:39px;background:var(--fur);border:3px solid var(--dark);border-radius:48% 48% 42% 42%}
+.raccoon .belly{width:30px;height:30px;left:8px;top:9px;background:var(--cream);border-radius:50%;opacity:.72}
+.raccoon .head{width:58px;height:48px;left:17px;top:8px;background:var(--fur);border:3px solid var(--dark);border-radius:48% 48% 45% 45%;z-index:3}
+.raccoon .ear{width:19px;height:19px;top:-9px;background:var(--fur);border:3px solid var(--dark);border-radius:50% 50% 40% 40%}
+.raccoon .ear.l{left:3px}.raccoon .ear.r{right:3px}
+.raccoon .ear:after{content:"";inset:4px;background:#b26b70;border-radius:50%}
+.raccoon .mask{left:4px;top:14px;width:48px;height:17px;background:var(--dark);border-radius:45%}
+.raccoon .eye{width:7px;height:7px;top:19px;background:#f8d96b;border-radius:50%;box-shadow:0 0 7px #f8d96b;z-index:4;transition:transform .2s}
+.raccoon .eye.l{left:14px}.raccoon .eye.r{right:14px}
+.raccoon .snout{width:27px;height:19px;left:14px;top:25px;background:var(--cream);border-radius:50% 50% 48% 48%;z-index:4}
+.raccoon .nose{width:9px;height:6px;left:9px;top:2px;background:#171717;border-radius:55%;z-index:5}
+.raccoon .mouth{width:12px;height:7px;left:7px;top:8px;border-bottom:2px solid #171717;border-radius:0 0 50% 50%;transition:height .2s}
+.raccoon .arm{width:13px;height:30px;top:45px;background:var(--fur2);border:3px solid var(--dark);border-radius:50%;z-index:5}
+.raccoon .arm.l{left:10px;transform:rotate(25deg)}.raccoon .arm.r{right:10px;transform:rotate(-25deg)}
+.raccoon .paw{width:16px;height:10px;bottom:-3px;background:var(--cream);border:2px solid var(--dark);border-radius:50%}
+.raccoon .paw.l{left:18px}.raccoon .paw.r{right:18px}
+.raccoon .bubble{position:absolute;left:70px;top:-18px;min-width:96px;max-width:180px;padding:7px 9px;background:#101b21e8;border:1px solid #55c9c7;border-radius:10px;color:#eaf4f8;font:800 11px/1.2 Inter,system-ui,sans-serif;letter-spacing:.2px;opacity:0;transform:translateY(7px) scale(.95);transition:opacity .2s,transform .2s;white-space:nowrap;box-shadow:0 8px 20px #0008}
+.raccoon.show-bubble .bubble{opacity:1;transform:none}
+.raccoon.scurry{animation:rac-scurr 1.2s ease-in-out infinite}
+.raccoon.peek{animation:rac-peek 2.4s ease-in-out infinite}
+.raccoon.idle{animation:rac-idle 3.2s ease-in-out infinite}
+.raccoon.excited{animation:rac-excited .65s ease-in-out infinite}
+.raccoon.alert{animation:rac-alert .8s ease-in-out infinite}
+.raccoon.wiggle .tail{animation:tail-wag .35s ease-in-out infinite alternate}
+.raccoon.point-up .arm.r{transform:rotate(-125deg);transform-origin:50% 10%}
+.raccoon.point-down .arm.r{transform:rotate(70deg);transform-origin:50% 10%}
+.raccoon.sleep .eye{transform:scaleY(.12)}
+.raccoon.sleep .mouth{height:2px}
+@keyframes rac-scurr{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-5px) rotate(2deg)}}
+@keyframes rac-peek{0%,100%{transform:translateX(0) rotate(0)}35%{transform:translateX(12px) rotate(5deg)}65%{transform:translateX(-3px) rotate(-3deg)}}
+@keyframes rac-idle{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+@keyframes rac-excited{0%,100%{transform:translateY(0) rotate(-2deg) scale(1)}50%{transform:translateY(-12px) rotate(3deg) scale(1.04)}}
+@keyframes rac-alert{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
+@keyframes tail-wag{from{transform:rotate(-28deg)}to{transform:rotate(8deg)}}
+@media(max-width:900px){.raccoon{transform:scale(.82);transform-origin:50% 80%}.raccoon .bubble{font-size:10px;min-width:78px}}
+@media(prefers-reduced-motion:reduce){.raccoon,.raccoon *{animation:none!important;transition:none!important}}
