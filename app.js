@@ -13,6 +13,18 @@ const day=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth
 let autoLive=false,noTradeWindow=false,autoBusy=false,autoEntryDoneTicker=null,autoPosition=null,lastAutoActionAt=0,dailyLossCents=0,autoDay=day();;
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const direction=n=>n>=0?'UP':'DOWN';
+function minuteFromContractClock(closeTime){
+  const closeMs=new Date(closeTime||0).getTime();
+  if(!Number.isFinite(closeMs)||closeMs<=0)return null;
+  const remaining=Math.max(0,(closeMs-Date.now())/1000);
+  const elapsed=Math.max(0,900-remaining);
+  return clamp(Math.floor(elapsed/60)+1,1,15);
+}
+function syncMinuteFromContractClock(){
+  const m=minuteFromContractClock(liveMarket?.closeTime||liveMarket?.expirationTime);
+  if(m!==null) minute=m;
+  return minute;
+}
 
 async function startApp(){
  if(!window.controllerAPI)throw new Error('controller API unavailable — preload did not initialize');
@@ -53,7 +65,7 @@ function componentSignals({above,up,down,imbalance,marketVelocity,btcVelocity,di
  return {strike,market,orderbook:book,marketMomentum:mm,btcMomentum:bm,reversal};
 }
 function learnedWeights(){const n=learning.completed; if(n<10)return {...BASE_WEIGHTS}; return Object.fromEntries(Object.entries(learning.weights).map(([k,v])=>[k,clamp(v,0.4,1.8)]))}
-function calc(){
+function calc(){syncMinuteFromContractClock();
  const btc=num($('btc').value)||0,target=num($('target').value)||0,up=num($('up').value)||0,down=num($('down').value)||0;
  const above=target>0?btc>=target:null,marketUp=up>=down,bs=bookStats(liveMarket);
  const close=new Date(liveMarket?.closeTime||liveMarket?.expirationTime||0).getTime(),secondsToClose=close?Math.max(0,(close-Date.now())/1000):null,distancePct=target?((btc-target)/target)*100:null;
@@ -113,7 +125,7 @@ async function refreshKalshi(force=false){try{let previousExpired=false;if(liveT
 setInterval(()=>{if(lastLiveAt)$('age').textContent=Math.floor((Date.now()-lastLiveAt)/1000)+'s';calc()},1000);
 setInterval(()=>{if(autoLive)refreshDailyLoss()},10000);
 setInterval(()=>refreshBtc(),3000);
-$('update').onclick=record;$('next').onclick=async()=>{if(minute<15){await record();minute++;calc();render()}else await rollover()};$('newWindow').onclick=()=>refreshKalshi(true);$('paperOrder').onclick=paperExecute;$('export').onclick=exportCSV;
+$('update').onclick=record;$('next').onclick=async()=>{await refreshKalshi(true);await record();syncMinuteFromContractClock();calc();render()};$('newWindow').onclick=()=>refreshKalshi(true);$('paperOrder').onclick=paperExecute;$('export').onclick=exportCSV;
 async function liveSetup(){
   try{
     const s=await window.controllerAPI.kalshiStatus();
