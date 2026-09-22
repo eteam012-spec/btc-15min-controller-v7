@@ -63,7 +63,7 @@ function request({apiKeyId, privateKeyPem, method, path, body, timeoutMs=8000}) 
           if (typeof rawDetail === 'string') detail = rawDetail;
           else if (rawDetail != null) { try { detail = JSON.stringify(rawDetail); } catch { detail = String(rawDetail); } }
           else detail = '';
-          const err = new Error(detail ? `Kalshi HTTP ${res.statusCode}: ${detail}` : `Kalshi HTTP ${res.statusCode}`);
+          const orderDebug = body?.ticker ? ` | ORDER_DEBUG ${JSON.stringify({ticker:body.ticker,side:body.side,count:body.count,price:body.price,time_in_force:body.time_in_force,self_trade_prevention_type:body.self_trade_prevention_type,post_only:body.post_only,cancel_order_on_pause:body.cancel_order_on_pause,reduce_only:body.reduce_only,subaccount:body.subaccount,exchange_index:body.exchange_index})}` : '';\n          const err = new Error((detail ? `Kalshi HTTP ${res.statusCode}: ${detail}` : `Kalshi HTTP ${res.statusCode}`) + orderDebug);
           err.statusCode=res.statusCode; err.body=parsed; return reject(err);
         }
         resolve(parsed);
