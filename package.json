@@ -1,7 +1,7 @@
 {
   "name": "btc-15m-controller-v7",
   "productName": "BTC 15-Minute Controller",
-  "version": "9.4.0",
+  "version": "9.5.0",
   "private": true,
   "description": "Tablet-friendly local BTC 15-minute adaptive strategy and controlled live execution controller V9.4",
   "author": "eteam012-spec",
