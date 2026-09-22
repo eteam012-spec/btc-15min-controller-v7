@@ -13,7 +13,10 @@ function loadCredentials(){
   try{
     if(!fs.existsSync(credentialsFile)||!safeStorage.isEncryptionAvailable()) return null;
     const raw=Buffer.from(fs.readFileSync(credentialsFile,'utf8'),'base64');
-    return JSON.parse(safeStorage.decryptString(raw));
+    const c=JSON.parse(safeStorage.decryptString(raw));
+    if(c?.privateKey && !c.privateKeyPem)c.privateKeyPem=c.privateKey;
+    if(c?.private_key && !c.privateKeyPem)c.privateKeyPem=c.private_key;
+    return c;
   }catch{return null}
 }
 function clearCredentials(){try{if(fs.existsSync(credentialsFile))fs.rmSync(credentialsFile,{force:true})}catch{}liveArmed=false;liveFirstOrderConfirmed=false}
