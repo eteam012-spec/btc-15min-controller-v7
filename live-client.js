@@ -2,13 +2,32 @@ const crypto = require('crypto');
 const PROD_BASE = 'https://external-api.kalshi.com/trade-api/v2';
 const ORDER_PATH = '/portfolio/events/orders';
 
+function normalizePrivateKey(value) {
+  let key = String(value ?? '').trim();
+  // Accommodate PEM text copied from JSON/env representations where newlines
+  // arrive as literal "\\n" characters.
+  key = key.replace(/\\r/g, '').replace(/\\n/g, '\n').replace(/\r/g, '').trim();
+  if (key.startsWith('"') && key.endsWith('"')) {
+    try { key = JSON.parse(key); } catch {}
+  }
+  if (!key) throw new Error('Private key is missing from saved credentials');
+  if (!/-----BEGIN (?:RSA )?PRIVATE KEY-----/.test(key) || !/-----END (?:RSA )?PRIVATE KEY-----/.test(key)) {
+    throw new Error('Saved private key is not a complete PEM key. Re-enter the full Kalshi private key, including BEGIN/END lines.');
+  }
+  return key;
+}
+
 function sign(privateKeyPem, timestampMs, method, path) {
+  const pem = normalizePrivateKey(privateKeyPem);
   const signPath = ('/trade-api/v2' + path).split('?')[0];
   const msg = Buffer.from(String(timestampMs) + method.toUpperCase() + signPath, 'utf8');
   const signer = crypto.createSign('sha256');
   signer.update(msg);
   signer.end();
-  return signer.sign({key: privateKeyPem, padding: crypto.constants.RSA_PKCS1_PSS_PADDING, saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST}).toString('base64');
+  // Convert once to a Node KeyObject so an undefined/malformed key fails with
+  // a useful controller error instead of Node's generic "CryptoKey" message.
+  const keyObject = crypto.createPrivateKey(pem);
+  return signer.sign({key: keyObject, padding: crypto.constants.RSA_PKCS1_PSS_PADDING, saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST}).toString('base64');
 }
 
 function authHeaders(apiKeyId, privateKeyPem, method, path) {
@@ -51,8 +70,10 @@ function request({apiKeyId, privateKeyPem, method, path, body, timeoutMs=8000}) 
 }
 
 async function getBalance(creds, exchangeIndex) {
+  if (!creds || !creds.apiKeyId) throw new Error('API key ID is missing from saved credentials');
+  normalizePrivateKey(creds.privateKey ?? creds.private_key ?? creds.privateKeyPem);
   const q = Number.isInteger(exchangeIndex) ? '?exchange_index=' + exchangeIndex : '';
-  return request({...creds, method:'GET', path:'/portfolio/balance' + q});
+  return request({...creds, privateKeyPem:creds.privateKey ?? creds.private_key ?? creds.privateKeyPem, method:'GET', path:'/portfolio/balance' + q});
 }
 
 async function getPositions(creds, ticker, exchangeIndex) {
