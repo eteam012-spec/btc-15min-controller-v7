@@ -35,7 +35,17 @@ async function startApp(){
  const todayRecords=allRecords.filter(r=>r.date===day()&&Number.isFinite(Number(r.windowNumber)));
  const savedWindowNumbers=todayRecords.map(r=>Number(r.windowNumber));
  if(savedWindowNumbers.length)windowNumber=Math.max(1,...savedWindowNumbers);
- loadLearning();renderLearning();
+ loadLearning();
+ // Repair legacy PAPER_ORDER results that were compared using r.pick instead of r.side.
+ let repaired=false;
+ for(const r of allRecords){
+   if(r.type==='PAPER_ORDER'&&r.officialSettlement&&r.settlement){
+     const next=r.side===r.settlement?'CORRECT':'INCORRECT';
+     if(r.result!==next){r.result=next;repaired=true;}
+   }
+ }
+ if(repaired)await window.controllerAPI.writeRecords(allRecords);
+ renderLearning();
  $('feed').textContent='LIVE ADAPTER: CONNECTING…';
  refreshBtc();
  refreshKalshi(true).finally(()=>{polling= polling || setInterval(()=>refreshKalshi(false),3000);});
