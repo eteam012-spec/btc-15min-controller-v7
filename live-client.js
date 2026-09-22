@@ -123,8 +123,18 @@ async function placeOrder(creds, {ticker, side, count, priceCents, clientOrderId
 }
 
 async function placeIOC(creds, {ticker, outcome, count, priceCents, clientOrderId, reduceOnly=false, exchangeIndex}) {
-  const side = outcome === 'UP' ? 'bid' : 'ask';
-  return placeOrder(creds,{ticker,side,count,priceCents,clientOrderId,reduceOnly,exchangeIndex});
+  // V2 event-market orders are quoted on the YES book only:
+  // bid = buy YES, ask = sell YES. A DOWN/NO entry is therefore a bid
+  // on YES at 1 - NO ask.
+  if(outcome === 'UP') {
+    return placeOrder(creds,{ticker,side:'bid',count,priceCents,clientOrderId,reduceOnly,exchangeIndex});
+  }
+  if(outcome === 'DOWN') {
+    const yesEquivalentCents = clampPrice(100 - priceCents);
+    return placeOrder(creds,{ticker,side:'bid',count,priceCents:yesEquivalentCents,clientOrderId,reduceOnly,exchangeIndex});
+  }
+  throw new Error('Invalid live order outcome');
 }
+function clampPrice(v){ return Math.max(1, Math.min(99, Math.round(v))); }
 
 module.exports = { getBalance, getPositions, getFills, getSettlements, getOrder, placeIOC, placeOrder };
