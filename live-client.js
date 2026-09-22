@@ -114,10 +114,11 @@ async function placeOrder(creds, {ticker, side, count, priceCents, clientOrderId
     price: (priceCents / 100).toFixed(4),
     time_in_force: 'immediate_or_cancel',
     self_trade_prevention_type: 'taker_at_cross',
-    cancel_order_on_pause: true,
-    reduce_only: Boolean(reduceOnly),
     post_only: false,
-    ...(Number.isInteger(exchangeIndex) && exchangeIndex >= 0 ? {exchange_index: exchangeIndex} : {})
+    cancel_order_on_pause: false,
+    reduce_only: Boolean(reduceOnly),
+    subaccount: 0,
+    exchange_index: Number.isInteger(exchangeIndex) && exchangeIndex >= 0 ? exchangeIndex : 0
   };
   return request({...creds, method:'POST', path:ORDER_PATH, body});
 }
