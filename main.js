@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, session, safeStorage, dialog } = require('electron');
 const https=require('https');const path=require('path');const fs=require('fs');const crypto=require('crypto');const {getBalance,getPositions,getFills,getSettlements,getOrder,placeIOC,placeOrder}=require('./live-client');
 let mainWindow;let liveArmed=false;let autoLive=false;let liveFirstOrderConfirmed=false;const dataDir=path.join(app.getPath('userData'),'data');const recordsFile=path.join(dataDir,'records.json');const credentialsFile=path.join(dataDir,'kalshi.credentials');
-function httpsJson(url,timeoutMs=7000){return new Promise((resolve,reject)=>{const req=https.get(url,{headers:{'User-Agent':'BTC-15M-Controller/7.0'}},res=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{if(res.statusCode<200||res.statusCode>=300)return reject(new Error(`HTTP ${res.statusCode}`));try{resolve(JSON.parse(d))}catch(e){reject(e)}})});req.setTimeout(timeoutMs,()=>req.destroy(new Error('Request timed out')));req.on('error',reject)})}
+function httpsJson(url,timeoutMs=7000){return new Promise((resolve,reject)=>{const req=https.get(url,{headers:{'User-Agent':'BTC-15M-Controller/9.4'}},res=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{if(res.statusCode<200||res.statusCode>=300)return reject(new Error(`HTTP ${res.statusCode}`));try{resolve(JSON.parse(d))}catch(e){reject(e)}})});req.setTimeout(timeoutMs,()=>req.destroy(new Error('Request timed out')));req.on('error',reject)})}
 function ensureDataDir(){fs.mkdirSync(dataDir,{recursive:true})}
 function saveCredentials(apiKeyId,privateKey){
   ensureDataDir();
@@ -45,7 +45,7 @@ ipcMain.handle('kalshi:order',async(_e,p)=>{
   if(!ticker||!['UP','DOWN'].includes(outcome)||!Number.isInteger(count)||count<1||!Number.isFinite(priceCents))throw new Error('Invalid order request');
   const confirm=await dialog.showMessageBox(mainWindow,{type:'warning',buttons:['EXECUTE LIVE ORDER','CANCEL'],defaultId:1,cancelId:1,noLink:true,title:'CONFIRM LIVE KALSHI ORDER',message:`REAL MONEY ORDER\n\n${outcome} • ${count} contract(s) • max ${priceCents}¢ each\nTicker: ${ticker}\n\nThis will submit a live order to Kalshi.`,detail:'The controller will use an Immediate-or-Cancel order. Confirm only if the displayed contract, side, quantity and price are correct.'});
   if(confirm.response!==0)throw new Error('Live order canceled by user');
-  const clientOrderId='btc15-v8-'+crypto.randomUUID();
+  const clientOrderId='btc15-v9.4-'+crypto.randomUUID();
   const result=await placeIOC(requireCreds(),{ticker,outcome,count,priceCents,clientOrderId});
   liveFirstOrderConfirmed=true;
   return {...result,clientOrderId};
