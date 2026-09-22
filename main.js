@@ -49,7 +49,8 @@ ipcMain.handle('kalshi:order',async(_e,p)=>{
   const confirm=await dialog.showMessageBox(mainWindow,{type:'warning',buttons:['EXECUTE LIVE ORDER','CANCEL'],defaultId:1,cancelId:1,noLink:true,title:'CONFIRM LIVE KALSHI ORDER',message:`REAL MONEY ORDER\n\n${outcome} • ${count} contract(s) • max ${priceCents}¢ each\nTicker: ${ticker}\n\nThis will submit a live order to Kalshi.`,detail:'The controller will use an Immediate-or-Cancel order. Confirm only if the displayed contract, side, quantity and price are correct.'});
   if(confirm.response!==0)throw new Error('Live order canceled by user');
   const clientOrderId='btc15-v9.4-'+crypto.randomUUID();
-  const result=await placeIOC(requireCreds(),{ticker,outcome,count,priceCents,clientOrderId});
+  const exchangeIndex=Number.isInteger(Number(p?.exchangeIndex))&&Number(p.exchangeIndex)>=0?Number(p.exchangeIndex):undefined;
+  const result=await placeIOC(requireCreds(),{ticker,outcome,count,priceCents,clientOrderId,exchangeIndex});
   liveFirstOrderConfirmed=true;
   return {...result,clientOrderId};
 });
