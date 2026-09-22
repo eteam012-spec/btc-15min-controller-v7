@@ -182,7 +182,7 @@ async function liveExecute(){
     const count=Math.floor((maxSpend*100)/priceCents);
     if(count<1)throw new Error(`Max spend ${maxSpend.toFixed(2)} is below one contract at ${priceCents}¢`);
     $('liveStatus').textContent=`LIVE ORDER PREVIEW: ${f.pick} • ${count} contract(s) • ${priceCents}¢ max • ${(count*priceCents/100).toFixed(2)} max cost • ${liveTicker}`;
-    const r=await window.controllerAPI.kalshiOrder({ticker:liveTicker,outcome:f.pick,count,priceCents});
+    const r=await window.controllerAPI.kalshiOrder({ticker:liveTicker,outcome:f.pick,count,priceCents,exchangeIndex:Number.isInteger(liveMarket?.exchangeIndex)?liveMarket.exchangeIndex:-1});
     const filled=Number(r.fill_count??r.filled_count??r.fill_count_fp??0);
     $('liveStatus').textContent='LIVE ORDER SUBMITTED • '+f.pick+' • '+count+' contracts • '+priceCents+'¢ • order '+(r.order_id||'accepted')+' • filled '+filled;
     rows.push({id:windowId+':LIVE:'+Date.now(),date:day(),timestamp:new Date().toISOString(),windowId,windowStart,minute,marketTicker:liveTicker,type:'LIVE_ORDER',side:f.pick,entryPriceCents:priceCents,count,orderId:r.order_id||'',clientOrderId:r.clientOrderId||'',fillCount:filled,result:'PENDING'});
