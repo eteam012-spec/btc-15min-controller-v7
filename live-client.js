@@ -56,7 +56,14 @@ function request({apiKeyId, privateKeyPem, method, path, body, timeoutMs=8000}) 
         let parsed;
         try { parsed = data ? JSON.parse(data) : {}; } catch { parsed = {raw:data}; }
         if(res.statusCode < 200 || res.statusCode >= 300) {
-          const err = new Error(parsed?.message || parsed?.error || ('Kalshi HTTP '+res.statusCode));
+          // Kalshi can return structured error objects. Passing an object to
+          // Error() turns it into the unhelpful "[object Object]" message.
+          const rawDetail = parsed?.message ?? parsed?.error ?? parsed?.code ?? parsed?.details ?? parsed?.raw;
+          let detail;
+          if (typeof rawDetail === 'string') detail = rawDetail;
+          else if (rawDetail != null) { try { detail = JSON.stringify(rawDetail); } catch { detail = String(rawDetail); } }
+          else detail = '';
+          const err = new Error(detail ? `Kalshi HTTP ${res.statusCode}: ${detail}` : `Kalshi HTTP ${res.statusCode}`);
           err.statusCode=res.statusCode; err.body=parsed; return reject(err);
         }
         resolve(parsed);
