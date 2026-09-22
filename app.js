@@ -150,12 +150,23 @@ async function armLive(){
 async function disarmLive(){try{await window.controllerAPI.kalshiDisarm();$('liveStatus').textContent='LIVE EXECUTION: DISARMED'}catch(e){$('liveStatus').textContent='DISARM ERROR: '+e.message}}
 async function liveBalance(){try{const r=await window.controllerAPI.kalshiBalance(Number.isInteger(liveMarket?.exchangeIndex)?liveMarket.exchangeIndex:undefined);const cents=Number(r.balance);$('liveStatus').textContent=Number.isFinite(cents)?`LIVE BALANCE: ${(cents/100).toFixed(2)}`:'BALANCE RESPONSE RECEIVED';return cents}catch(e){$('liveStatus').textContent='BALANCE ERROR: '+e.message;return null}}
 function liveQuoteCents(outcome){
+  // For an immediate-or-cancel buy, use the actual ask for the outcome.
+  // Deriving the price from the opposite-side bid can overstate the price
+  // when the book has a spread (e.g. UP ask 91.6¢ but 100-NO bid = 99¢).
+  const yesAsk=pctPrice(liveMarket?.yesAsk);
+  const noAsk=pctPrice(liveMarket?.noAsk);
   const yes=(liveMarket?.orderbook?.yes||[]).map(parseLevel).filter(Boolean);
   const no=(liveMarket?.orderbook?.no||[]).map(parseLevel).filter(Boolean);
-  const bestYesBid=yes.length?Math.max(...yes.map(x=>x.price)):null;
-  const bestNoBid=no.length?Math.max(...no.map(x=>x.price)):null;
-  if(outcome==='UP' && bestNoBid!==null)return clamp(Math.ceil(100-bestNoBid),1,99);
-  if(outcome==='DOWN' && bestYesBid!==null)return clamp(Math.ceil(100-bestYesBid),1,99);
+  const bestYesAsk=yes.length?Math.min(...yes.map(x=>x.price)):null;
+  const bestNoAsk=no.length?Math.min(...no.map(x=>x.price)):null;
+  if(outcome==='UP'){
+    const p=yesAsk??bestYesAsk;
+    if(p!==null)return clamp(Math.ceil(p),1,99);
+  }
+  if(outcome==='DOWN'){
+    const p=noAsk??bestNoAsk;
+    if(p!==null)return clamp(Math.ceil(p),1,99);
+  }
   return null;
 }
 async function liveExecute(){
