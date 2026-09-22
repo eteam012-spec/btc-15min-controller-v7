@@ -203,13 +203,28 @@ function autoSettings(){return {riskPct:clamp(Number($('liveRiskPct').value)||2,
 function autoPositionFromResponse(p){const list=Array.isArray(p?.market_positions)?p.market_positions:Array.isArray(p?.positions)?p.positions:[];const x=list.find(v=>String(v.ticker||v.market_ticker||'')===liveTicker);if(!x)return null;const pos=Number(x.position_fp??x.position??x.yes_position??0);return Number.isFinite(pos)&&pos!==0?{ticker:liveTicker,yesPosition:pos}:null}
 async function refreshDailyLoss(){try{const now=Math.floor(Date.now()/1000),start=new Date();start.setHours(0,0,0,0);const s=await window.controllerAPI.kalshiSettlements({min_ts:Math.floor(start.getTime()/1000),max_ts:now,limit:200});const arr=Array.isArray(s?.settlements)?s.settlements:[];dailyLossCents=Math.max(0,Math.round(arr.reduce((sum,x)=>{const revenue=Number(x.revenue)||0,cost=(Number(x.yes_total_cost)||0)+(Number(x.no_total_cost)||0),fee=Number(String(x.fee_cost||0))*100;return sum+Math.min(0,revenue-cost-fee)},0)));}catch(e){dailyLossCents=0;}}
 async function autoReconcile(){if(!autoLive||!liveTicker)return;try{await refreshDailyLoss();const p=await window.controllerAPI.kalshiPositions(liveTicker, Number.isInteger(liveMarket?.exchangeIndex)?liveMarket.exchangeIndex:undefined);autoPosition=autoPositionFromResponse(p);$('autoStatus').textContent=`AUTO LIVE: ${autoLive?'ON':'OFF'} • NO-TRADE: ${noTradeWindow?'ON':'OFF'} • POSITION: ${autoPosition?(autoPosition.yesPosition>0?'YES/UP':'NO/DOWN'):'FLAT'}`;}catch(e){$('autoStatus').textContent='AUTO LIVE: '+e.message}}
-function autoEntryPrice(outcome){const bs=bookStats(liveMarket);if(outcome==='UP'&&bs.noBid!==null)return clamp(Math.ceil(100-bs.noBid),1,99);if(outcome==='DOWN'&&bs.yesBid!==null)return clamp(Math.ceil(100-bs.yesBid),1,99);return null}
-async function autoOrder(outcome,priceCents,count,reduceOnly=false){const side=outcome==='UP'?'bid':'ask';const r=await window.controllerAPI.kalshiAutoOrder({ticker:liveTicker,side,count,priceCents,reduceOnly,exchangeIndex:Number.isInteger(liveMarket?.exchangeIndex)?liveMarket.exchangeIndex:-1});const filled=Number(r.fill_count??0);rows.push({id:`${windowId}:AUTO:${Date.now()}`,date:day(),timestamp:new Date().toISOString(),windowId,windowStart,minute,marketTicker:liveTicker,type:reduceOnly?'AUTO_EXIT':'AUTO_ENTRY',side:outcome,priceCents,count,fillCount:filled,orderId:r.order_id||'',result:filled>0?'FILLED':'UNFILLED'});await persist();return {...r,filled}}
+function autoEntryPrice(outcome){
+  const yesAsk=pctPrice(liveMarket?.yesAsk), noAsk=pctPrice(liveMarket?.noAsk);
+  if(outcome==='UP'&&yesAsk!==null)return clamp(Math.ceil(yesAsk),1,99);
+  if(outcome==='DOWN'&&noAsk!==null)return clamp(Math.ceil(noAsk),1,99);
+  return null;
+}
+function autoExitPrice(outcome){
+  const yesBid=pctPrice(liveMarket?.yesBid), yesAsk=pctPrice(liveMarket?.yesAsk);
+  // Exit an UP/YES position by selling YES at the current YES bid.
+  if(outcome==='UP'&&yesBid!==null)return clamp(Math.floor(yesBid),1,99);
+  // Exit a DOWN/NO position by buying YES at the current YES ask.
+  if(outcome==='DOWN'&&yesAsk!==null)return clamp(Math.ceil(yesAsk),1,99);
+  return null;
+}
+async function autoOrder(outcome,priceCents,count,reduceOnly=false){
+  const side=reduceOnly ? (outcome==='UP'?'ask':'bid') : 'bid';
+  const r=await window.controllerAPI.kalshiAutoOrder({ticker:liveTicker,side,count,priceCents,reduceOnly,exchangeIndex:Number.isInteger(liveMarket?.exchangeIndex)?liveMarket.exchangeIndex:-1});const filled=Number(r.fill_count??0);rows.push({id:`${windowId}:AUTO:${Date.now()}`,date:day(),timestamp:new Date().toISOString(),windowId,windowStart,minute,marketTicker:liveTicker,type:reduceOnly?'AUTO_EXIT':'AUTO_ENTRY',side:outcome,priceCents,count,fillCount:filled,orderId:r.order_id||'',result:filled>0?'FILLED':'UNFILLED'});await persist();return {...r,filled}}
 async function autoTradeTick(){autoResetDay();if(!autoLive||autoBusy||!liveTicker||!liveMarket)return;autoBusy=true;try{const f=calc();const s=autoSettings();if(Date.now()-lastLiveAt>7000||Date.now()-lastBtcAt>7000){$('autoStatus').textContent='AUTO LIVE: PAUSED • STALE DATA';return}if(dailyLossCents>=s.dailyLoss*100){$('autoStatus').textContent='AUTO LIVE: HALTED • DAILY LOSS LIMIT';return}await autoReconcile();
  const secs=f.secondsToClose;
  // Exits have priority. A meaningful reversal/high-risk signal flattens an existing position.
  if(autoPosition && (f.risk==='HIGH'||f.risk==='CRITICAL'||(autoPosition.yesPosition>0&&f.pick==='DOWN')||(autoPosition.yesPosition<0&&f.pick==='UP')||(secs!==null&&secs<20))){
-   const exitOutcome=autoPosition.yesPosition>0?'DOWN':'UP';const p=autoEntryPrice(exitOutcome);const qty=Math.max(1,Math.floor(Math.abs(autoPosition.yesPosition)));if(p!==null&&Date.now()-lastAutoActionAt>3000){await autoOrder(exitOutcome,p,qty,true);lastAutoActionAt=Date.now();await autoReconcile()}return;
+   const exitOutcome=autoPosition.yesPosition>0?'UP':'DOWN';const p=autoExitPrice(exitOutcome);const qty=Math.max(1,Math.floor(Math.abs(autoPosition.yesPosition)));if(p!==null&&Date.now()-lastAutoActionAt>3000){await autoOrder(exitOutcome,p,qty,true);lastAutoActionAt=Date.now();await autoReconcile()}return;
  }
  // No-trade blocks new entries, but does not block protective exits.
  if(noTradeWindow||autoEntryDoneTicker===liveTicker)return;
