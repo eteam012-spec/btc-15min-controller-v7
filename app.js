@@ -172,7 +172,7 @@ function syncWindowNumberForContract(m){
  const buckets=Math.max(0,Math.floor((currentStart-lastStart)/(15*60*1000)));
  windowNumber=Math.max(1,(Number(latest.windowNumber)||1)+buckets);
 }
-async function refreshKalshi(force=false){try{
+async function refreshKalshiInternal(force=false){try{
  for(const ticker of Array.from(liveSettlementQueue.keys())){try{const snap=await window.controllerAPI.kalshiSnapshot(ticker);await finalizeLiveSettlement(ticker,snap)}catch(_){ }}
  for(const ticker of Array.from(pendingWindows.keys())){try{const snap=await window.controllerAPI.kalshiSnapshot(ticker);await finalizePending(ticker,snap)}catch(_){ }}
  if(liveTicker&&liveMarket){
@@ -198,9 +198,12 @@ async function refreshKalshi(force=false){try{
  const close=new Date(snap.closeTime||snap.expirationTime||0);$('closeAt').textContent=isNaN(close.getTime())?'—':close.toLocaleTimeString();calc();render();
  }catch(e){$('feed').textContent='LIVE ADAPTER: STALE / UNAVAILABLE — NOT GUESSING';$('contractState').textContent='STALE';calc();render()}}
 
+let kalshiRefreshBusy=false;
+async function refreshKalshi(force=false){if(kalshiRefreshBusy)return;kalshiRefreshBusy=true;try{return await refreshKalshiInternal(force)}finally{kalshiRefreshBusy=false}}
 setInterval(()=>{if(lastLiveAt)$('age').textContent=Math.floor((Date.now()-lastLiveAt)/1000)+'s';calc();recordObservationIfNeeded().catch(e=>{$('feed').textContent='OBSERVATION ERROR: '+(e?.message||e)})},1000);
 setInterval(()=>{if(autoLive)refreshDailyLoss()},10000);
 setInterval(()=>refreshBtc(),3000);
+setInterval(()=>refreshKalshi(false),3000);
 setInterval(()=>refreshLiveTradeWindow(),3000);
 $('update').onclick=record;$('next').onclick=async()=>{await refreshKalshi(true);await record();syncMinuteFromContractClock();calc();render()};$('newWindow').onclick=()=>refreshKalshi(true);$('paperOrder').onclick=paperExecute;$('export').onclick=exportCSV;
 async function liveSetup(){
@@ -306,7 +309,7 @@ async function lockLiveSettlement(ticker,snapshot){
  if(!ticker||liveSettlementQueue.has(ticker))return liveSettlementQueue.get(ticker)||null;
  const order=latestLiveOrder(ticker);if(!order)return null;
  let position=0;try{const ex=Number.isInteger(snapshot?.exchangeIndex)?snapshot.exchangeIndex:undefined;position=parseLivePosition(await window.controllerAPI.kalshiPositions(ticker,ex),ticker)}catch(_){ }
- const count=Math.abs(position)||Number(order.fillCount||order.count||0)||0;if(count<=0)return null;
+ const count=Number(order.fillCount||order.count||0)||Math.abs(position)||0;if(count<=0)return null;
  const entry=Number(order.entryPriceCents),fee=Number(order.averageFeePaid);
  const locked={ticker,orderId:order.orderId||null,side:order.side||null,count,entryCents:Number.isFinite(entry)?entry:null,fee:Number.isFinite(fee)?fee:null,positionAtClose:position,closedAt:new Date(snapshot?.closeTime||snapshot?.expirationTime||Date.now()).toISOString(),outcome:null,pnlCents:null,status:'CLOSED / AWAITING OFFICIAL RESULT'};
  liveSettlementQueue.set(ticker,locked);lastLiveSettlement=locked;await persistLiveSettlement(locked);return locked;
@@ -315,7 +318,7 @@ async function finalizeLiveSettlement(ticker,snapshot){
  const s=liveSettlementQueue.get(ticker);if(!s)return false;const outcome=settlementResultFromMarket(snapshot);if(!outcome)return false;
  const entry=Number(s.entryCents),count=Number(s.count),fee=Number(s.fee);if(!Number.isFinite(entry)||!Number.isFinite(count)||count<=0)return false;
  const win=s.side===outcome;s.outcome=outcome;s.pnlCents=(win?(100-entry):(-entry))*count-(Number.isFinite(fee)?fee*100:0);s.status='SETTLED';s.settledAt=new Date().toISOString();lastLiveSettlement=s;
- await persistLiveSettlement(s);liveSettlementQueue.delete(ticker);try{await liveBalance()}catch(_){ }return true;
+ liveSettlementQueue.delete(ticker);try{s.balanceCents=await liveBalance()}catch(_){ }await persistLiveSettlement(s);return true;
 }
 function renderSettlementStatus(){
  const s=lastLiveSettlement;if(!s)return;const pnl=Number(s.pnlCents);const pnlText=Number.isFinite(pnl)?(pnl>=0?'+':'')+money(pnl/100):'PENDING';const result=s.outcome||'PENDING';
