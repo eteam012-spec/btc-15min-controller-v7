@@ -245,6 +245,7 @@ function liveQuoteCents(outcome){
 }
 async function liveExecute(){
   try{
+    if(autoLive)throw new Error('Manual live test is locked while AUTO LIVE is ON. Disarm AUTO first.');
     const f=calc();
     if(f.action!=='PAPER READY')throw new Error('Engine is not ready: '+f.action);
     if(!liveTicker||!liveMarket)throw new Error('No active Kalshi contract');
@@ -261,9 +262,17 @@ async function liveExecute(){
     $('liveStatus').textContent=`LIVE ORDER PREVIEW: ${f.pick} • 1 contract • ${priceCents}¢ max • ${estimatedCost.toFixed(2)} max cost • ${liveTicker}`;
     const r=await window.controllerAPI.kalshiOrder({ticker:liveTicker,outcome:f.pick,count,priceCents,exchangeIndex:Number.isInteger(liveMarket?.exchangeIndex)?liveMarket.exchangeIndex:-1});
     const filled=Number(r.fill_count??r.filled_count??r.fill_count_fp??0);
-    $('liveStatus').textContent='LIVE ORDER SUBMITTED • '+f.pick+' • 1 contract • '+priceCents+'¢ • order '+(r.order_id||'accepted')+' • filled '+filled;
-    rows.push({id:windowId+':LIVE:'+Date.now(),date:day(),timestamp:new Date().toISOString(),windowId,windowStart,minute,marketTicker:liveTicker,type:'LIVE_ORDER',side:f.pick,entryPriceCents:priceCents,count,orderId:r.order_id||'',clientOrderId:r.clientOrderId||'',fillCount:filled,result:'PENDING'});
+    const remaining=Number(r.remaining_count??r.remaining_count_fp??0);
+    const avg=Number(r.average_fill_price??r.average_fill_price_dollars);
+    const fee=Number(r.average_fee_paid??r.average_fee_paid_dollars);
+    if(filled>0){
+      $('liveStatus').textContent=`LIVE FILLED • ${f.pick} • ${filled.toFixed(2)} contract • avg ${Number.isFinite(avg)?(avg*100).toFixed(2)+'¢':'quote n/a'} • fee ${Number.isFinite(fee)?fee.toFixed(4):'n/a'} • order ${r.order_id||'accepted'}`;
+    }else{
+      $('liveStatus').textContent=`LIVE ORDER ACCEPTED • NO FILL • ${f.pick} • requested 1 • remaining ${Number.isFinite(remaining)?remaining.toFixed(2):'n/a'} • order ${r.order_id||'accepted'}`;
+    }
+    rows.push({id:windowId+':LIVE:'+Date.now(),date:day(),timestamp:new Date().toISOString(),windowId,windowStart,minute,marketTicker:liveTicker,type:'LIVE_ORDER',side:f.pick,entryPriceCents:priceCents,count,orderId:r.order_id||'',clientOrderId:r.clientOrderId||'',fillCount:filled,remainingCount:remaining,averageFillPrice:r.average_fill_price||'',averageFeePaid:r.average_fee_paid||'',result:filled>0?'FILLED':'NO_FILL'});
     await persist();
+    await liveBalance();
   }catch(e){$('liveStatus').textContent='LIVE ORDER BLOCKED/FAILED: '+e.message}
 }
 $('saveCreds').onclick=saveLiveCredentials;
