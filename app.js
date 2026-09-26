@@ -308,7 +308,7 @@ async function autoOrder(outcome,priceCents,count,reduceOnly=false){
   // Strategy prices are expressed as the selected outcome's economic price.
   // V2 orders use the YES book, so a DOWN/NO entry is bid YES at 100-NO.
   const orderPrice=(!reduceOnly&&outcome==='DOWN')?clamp(100-priceCents,1,99):clamp(priceCents,1,99);
-  const safeCount=autoSingleWindowTicker?1:count;const r=await window.controllerAPI.kalshiAutoOrder({ticker:liveTicker,side,safeCount,count:safeCount,priceCents:orderPrice,reduceOnly,exchangeIndex:Number.isInteger(liveMarket?.exchangeIndex)?liveMarket.exchangeIndex:-1});
+  const safeCount=autoSingleWindowTicker?1:count;const r=await window.controllerAPI.kalshiAutoOrder({ticker:liveTicker,side,count:safeCount,priceCents:orderPrice,reduceOnly,exchangeIndex:Number.isInteger(liveMarket?.exchangeIndex)?liveMarket.exchangeIndex:-1});
   const filled=Number(r.fill_count??r.fill_count_fp??r.filled_count??0);
   rows.push({id:`${windowId}:AUTO:${Date.now()}`,date:day(),timestamp:new Date().toISOString(),windowId,windowStart,minute,marketTicker:liveTicker,type:reduceOnly?'AUTO_EXIT':'AUTO_ENTRY',side:outcome,priceCents,orderPriceCents:orderPrice,count,fillCount:filled,orderId:r.order_id||'',result:filled>0?'FILLED':'UNFILLED'});
   await persist();return {...r,filled,orderPriceCents:orderPrice}
