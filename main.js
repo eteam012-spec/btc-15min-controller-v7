@@ -46,10 +46,48 @@ ipcMain.handle('kalshi:order',async(_e,p)=>{
   if(!liveArmed)throw new Error('LIVE execution is disarmed');
   const ticker=String(p?.ticker||'');const outcome=String(p?.outcome||'');const count=Number(p?.count);const priceCents=Number(p?.priceCents);
   if(!ticker||!['UP','DOWN'].includes(outcome)||!Number.isInteger(count)||count<1||!Number.isFinite(priceCents))throw new Error('Invalid order request');
-  const confirm=await dialog.showMessageBox(mainWindow,{type:'warning',buttons:['EXECUTE LIVE ORDER','CANCEL'],defaultId:1,cancelId:1,noLink:true,title:'CONFIRM LIVE KALSHI ORDER',message:`REAL MONEY ORDER\n\n${outcome} • ${count} contract(s) • max ${priceCents}¢ each\nTicker: ${ticker}\n\nThis will submit a live order to Kalshi.`,detail:'The controller will use an Immediate-or-Cancel order. Confirm only if the displayed contract, side, quantity and price are correct.'});
+
+  // V9.19 live-order preflight: refresh the market immediately before the
+  // confirmation dialog so a stale renderer quote cannot be submitted.
+  const liveMarketResp=await httpsJson(`https://external-api.kalshi.com/trade-api/v2/markets/${encodeURIComponent(ticker)}`);
+  const liveM=liveMarketResp?.market||liveMarketResp;
+  const status=String(liveM?.status||'').toLowerCase();
+  if(!['open','active'].includes(status))throw new Error(`Market is not open for trading (status: ${liveM?.status||'unknown'})`);
+  const freshExchangeIndex=Number.isInteger(Number(liveM?.exchange_index))?Number(liveM.exchange_index):null;
+  const suppliedExchangeIndex=Number.isInteger(Number(p?.exchangeIndex))&&Number(p.exchangeIndex)>=0?Number(p.exchangeIndex):null;
+  if(freshExchangeIndex!==null&&suppliedExchangeIndex!==null&&freshExchangeIndex!==suppliedExchangeIndex){
+    throw new Error(`Market routing changed: controller had exchange ${suppliedExchangeIndex}, Kalshi now reports exchange ${freshExchangeIndex}. Refresh contract and retry.`);
+  }
+  const exchangeIndex=freshExchangeIndex!==null?freshExchangeIndex:suppliedExchangeIndex;
+
+  // Validate the submitted price against the market's current supported price
+  // structure when that metadata is available.
+  const ranges=Array.isArray(liveM?.price_ranges)?liveM.price_ranges:[];
+  if(ranges.length){
+    const dollars=priceCents/100;
+    const valid=ranges.some(r=>{
+      const start=Number(r?.start),end=Number(r?.end),step=Number(r?.step);
+      if(![start,end,step].every(Number.isFinite)||step<=0||dollars<start-1e-9||dollars>end+1e-9)return false;
+      const steps=Math.round((dollars-start)/step);
+      return Math.abs(dollars-(start+steps*step))<1e-8;
+    });
+    if(!valid)throw new Error(`Price ${priceCents}¢ is not a valid tick for the current market price structure. Refresh contract and retry.`);
+  }
+
+  // Do not silently replace the user's confirmed price. If the market moved
+  // materially between renderer snapshot and this preflight, fail safely.
+  const currentAsk=outcome==='UP'?Number(liveM?.yes_ask_dollars??liveM?.yes_ask):Number(liveM?.no_ask_dollars??liveM?.no_ask);
+  if(Number.isFinite(currentAsk)){
+    const currentAskCents=currentAsk<=1?currentAsk*100:currentAsk;
+    const currentRounded=Math.ceil(currentAskCents-1e-9);
+    if(currentRounded!==priceCents){
+      throw new Error(`Live quote changed from ${priceCents}¢ to ${currentRounded}¢ before order submission. Refresh contract and retry.`);
+    }
+  }
+
+  const confirm=await dialog.showMessageBox(mainWindow,{type:'warning',buttons:['EXECUTE LIVE ORDER','CANCEL'],defaultId:1,cancelId:1,noLink:true,title:'CONFIRM LIVE KALSHI ORDER',message:`REAL MONEY ORDER\n\n${outcome} • ${count} contract(s) • max ${priceCents}¢ each\nTicker: ${ticker}\nExchange: ${exchangeIndex??'auto'}\n\nThis will submit a live order to Kalshi.`,detail:'The controller will use an Immediate-or-Cancel order. Confirm only if the displayed contract, side, quantity and price are correct.'});
   if(confirm.response!==0)throw new Error('Live order canceled by user');
-  const clientOrderId='btc15-v9.4-'+crypto.randomUUID();
-  const exchangeIndex=Number.isInteger(Number(p?.exchangeIndex))&&Number(p.exchangeIndex)>=0?Number(p.exchangeIndex):undefined;
+  const clientOrderId='btc15-v9.19-'+crypto.randomUUID();
   const result=await placeIOC(requireCreds(),{ticker,outcome,count,priceCents,clientOrderId,exchangeIndex});
   liveFirstOrderConfirmed=true;
   return {...result,clientOrderId};
