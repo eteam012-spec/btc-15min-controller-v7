@@ -327,7 +327,7 @@ async function autoTradeTick(){autoResetDay();if(!autoLive||autoBusy||!liveTicke
  const count=autoSingleWindowTicker?1:Math.max(1,Math.floor(budgetCents/p));const result=await autoOrder(f.pick,p,count,false);if(result.filled>0){autoEntryDoneTicker=liveTicker;await autoReconcile()}lastAutoActionAt=Date.now();
  }catch(e){$('autoStatus').textContent='AUTO LIVE ERROR • DISARMED: '+e.message;autoLive=false;try{await window.controllerAPI.kalshiAutoDisarm()}catch{}}finally{autoBusy=false}}
 async function armAuto(){try{if(!liveTicker||!liveMarket)throw new Error('No active Kalshi contract');autoSingleWindowTicker=liveTicker;await window.controllerAPI.kalshiAutoArm();autoLive=true;noTradeWindow=false;$('autoStatus').textContent=`AUTO LIVE: ON • SINGLE-WINDOW TEST • ${liveTicker} • max 1 contract`;}catch(e){$('autoStatus').textContent='AUTO ARM ERROR: '+e.message}}
-async function disarmAuto(){autoLive=false;try{await window.controllerAPI.kalshiAutoDisarm()}catch{}$('autoStatus').textContent='AUTO LIVE: OFF • NO-TRADE: '+(noTradeWindow?'ON':'OFF')}
+async function disarmAuto(){autoLive=false;autoSingleWindowTicker=null;try{await window.controllerAPI.kalshiAutoDisarm()}catch{}$('autoStatus').textContent='AUTO LIVE: OFF • NO-TRADE: '+(noTradeWindow?'ON':'OFF')}
 function toggleNoTrade(){noTradeWindow=!noTradeWindow;$('autoStatus').textContent=`AUTO LIVE: ${autoLive?'ON':'OFF'} • NO-TRADE: ${noTradeWindow?'ON':'OFF'} • POSITION: ${autoPosition?'OPEN':'FLAT'}`;$('noTrade').textContent=noTradeWindow?'ALLOW TRADING THIS WINDOW':'NO-TRADE THIS WINDOW'}
 $('autoArm').onclick=armAuto;$('autoDisarm').onclick=disarmAuto;$('noTrade').onclick=toggleNoTrade;
 setInterval(autoTradeTick,1500);
