@@ -102,12 +102,11 @@ async function getOrder(creds, orderId) {
   return request({...creds, method:'GET', path:'/portfolio/orders/' + encodeURIComponent(orderId)});
 }
 
-async function placeOrder(creds, {ticker, side, count, priceCents, clientOrderId, reduceOnly=false, exchangeIndex}) {
+function buildOrderBody({ticker,side,count,priceCents,clientOrderId,reduceOnly=false,exchangeIndex}) {
   if(!ticker || !['bid','ask'].includes(side)) throw new Error('Invalid live order parameters');
   if(!Number.isInteger(count) || count < 1) throw new Error('Count must be a positive integer');
   if(!Number.isFinite(priceCents) || priceCents < 1 || priceCents > 99) throw new Error('Price must be 1–99 cents');
-
-  const body = {
+  return {
     ticker,
     client_order_id: clientOrderId,
     side,
@@ -121,22 +120,24 @@ async function placeOrder(creds, {ticker, side, count, priceCents, clientOrderId
     subaccount: 0,
     exchange_index: Number.isInteger(exchangeIndex) && exchangeIndex >= 0 ? exchangeIndex : 0
   };
+}
+async function placeOrder(creds, args) {
+  const body=buildOrderBody(args);
   return request({...creds, method:'POST', path:ORDER_PATH, body});
 }
-
-async function placeIOC(creds, {ticker, outcome, count, priceCents, clientOrderId, reduceOnly=false, exchangeIndex}) {
-  // V2 event-market orders are quoted on the YES book only:
-  // bid = buy YES, ask = sell YES. A DOWN/NO entry is therefore a bid
-  // on YES at 1 - NO ask.
-  if(outcome === 'UP') {
-    return placeOrder(creds,{ticker,side:'bid',count,priceCents,clientOrderId,reduceOnly,exchangeIndex});
-  }
-  if(outcome === 'DOWN') {
-    const yesEquivalentCents = clampPrice(100 - priceCents);
-    return placeOrder(creds,{ticker,side:'bid',count,priceCents:yesEquivalentCents,clientOrderId,reduceOnly,exchangeIndex});
+function mapOutcomeOrder({outcome,priceCents,reduceOnly=false}) {
+  if(outcome==='UP') return {side:reduceOnly?'ask':'bid',priceCents:clampPrice(priceCents)};
+  if(outcome==='DOWN') {
+    // Entry into DOWN/NO = buy NO, represented on V2 as a YES bid at 1-NO.
+    // Exit from DOWN/NO = buy YES to flatten the negative YES position.
+    return {side:'bid',priceCents:reduceOnly?clampPrice(priceCents):clampPrice(100-priceCents)};
   }
   throw new Error('Invalid live order outcome');
 }
+async function placeIOC(creds, {ticker, outcome, count, priceCents, clientOrderId, reduceOnly=false, exchangeIndex}) {
+  const mapped=mapOutcomeOrder({outcome,priceCents,reduceOnly});
+  return placeOrder(creds,{ticker,side:mapped.side,count,priceCents:mapped.priceCents,clientOrderId,reduceOnly,exchangeIndex});
+}
 function clampPrice(v){ return Math.max(1, Math.min(99, Math.round(v))); }
 
-module.exports = { getBalance, getPositions, getFills, getSettlements, getOrder, placeIOC, placeOrder };
+module.exports = { getBalance, getPositions, getFills, getSettlements, getOrder, placeIOC, placeOrder, buildOrderBody, mapOutcomeOrder, clampPrice };
