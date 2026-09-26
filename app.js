@@ -287,6 +287,61 @@ async function liveExecute(){
     await liveBalance();
   }catch(e){$('liveStatus').textContent='LIVE ORDER BLOCKED/FAILED: '+e.message}
 }
+function openSellWindow(){
+  const pos=Number(liveTrade.position)||0;
+  if(!liveTicker||!liveMarket||pos===0){
+    $('liveStatus').textContent='SELL BLOCKED — NO OPEN LIVE POSITION';
+    return;
+  }
+  const outcome=pos>0?'UP':'DOWN';
+  const qty=Math.max(1,Math.floor(Math.abs(pos)));
+  const yesBid=pctPrice(liveMarket?.yesBid), yesAsk=pctPrice(liveMarket?.yesAsk);
+  const exitQuote=outcome==='UP'?yesBid:(yesAsk!==null?100-yesAsk:null);
+  const entry=Number(liveTrade.entryCents);
+  const fee=Number(liveTrade.fee);
+  $('sellTicker').textContent=liveTicker;
+  $('sellPosition').textContent=`${outcome} • ${qty} contract${qty===1?'':'s'}`;
+  $('sellQuote').textContent=exitQuote===null?'—':exitQuote.toFixed(1)+'¢';
+  $('sellProceeds').textContent=exitQuote===null?'—':money(exitQuote*qty/100);
+  $('sellEntry').textContent=Number.isFinite(entry)?entry.toFixed(1)+'¢':'—';
+  const estPnl=exitQuote!==null&&Number.isFinite(entry)?(exitQuote-entry)*qty-(Number.isFinite(fee)?fee*100:0):null;
+  $('sellPnl').textContent=Number.isFinite(estPnl)?(estPnl>=0?'+':'')+money(estPnl/100):'—';
+  $('sellPnl').className=estPnl>0?'sell-positive':(estPnl<0?'sell-negative':'');
+  $('sellQty').max=String(qty);$('sellQty').value=String(qty);
+  $('sellWarning').textContent=`Displayed quote is informational. The controller will refresh the Kalshi position and executable quote again before submitting ${qty} contract${qty===1?'':'s'}.`;
+  $('sellModal').hidden=false;
+  setTimeout(()=>{$('sellQty').focus();$('sellQty').select()},50);
+}
+function closeSellWindow(){$('sellModal').hidden=true}
+async function confirmSell(){
+  const pos=Number(liveTrade.position)||0;
+  if(!liveTicker||pos===0){closeSellWindow();return}
+  const outcome=pos>0?'UP':'DOWN';
+  const maxQty=Math.floor(Math.abs(pos));
+  const count=Math.floor(Number($('sellQty').value));
+  if(!Number.isInteger(count)||count<1||count>maxQty){$('sellWarning').textContent=`Enter a whole number from 1 to ${maxQty}.`;return}
+  $('sellConfirm').disabled=true;$('sellCancel2').disabled=true;
+  $('sellWarning').textContent='Refreshing Kalshi position and executable quote…';
+  try{
+    const r=await window.controllerAPI.kalshiSell({ticker:liveTicker,outcome,count,exchangeIndex:Number.isInteger(liveMarket?.exchangeIndex)?liveMarket.exchangeIndex:-1});
+    const filled=Number(r.fill_count??r.fill_count_fp??r.filled_count??0);
+    const remaining=Number(r.remaining_count??r.remaining_count_fp??0);
+    $('liveStatus').textContent=filled>0
+      ?`LIVE SELL FILLED • ${r.outcome||outcome} • ${filled.toFixed(2)} contract • exit ${Number(r.priceCents).toFixed(1)}¢ • order ${r.order_id||'accepted'}`
+      :`LIVE SELL ACCEPTED • NO FILL • requested ${count} • remaining ${Number.isFinite(remaining)?remaining.toFixed(2):'n/a'} • order ${r.order_id||'accepted'}`;
+    rows.push({id:windowId+':LIVE_EXIT:'+Date.now(),date:day(),timestamp:new Date().toISOString(),windowId,windowStart,minute,marketTicker:liveTicker,type:'LIVE_EXIT',side:outcome,entryPriceCents:liveTrade.entryCents??null,exitPriceCents:Number(r.priceCents),count,fillCount:filled,remainingCount:remaining,orderId:r.order_id||'',clientOrderId:r.clientOrderId||'',result:filled>0?'FILLED':'NO_FILL'});
+    await persist();
+    await refreshLiveTradeWindow();
+    closeSellWindow();
+  }catch(e){
+    $('sellWarning').textContent='SELL BLOCKED/FAILED: '+(e?.message||e);
+  }finally{$('sellConfirm').disabled=false;$('sellCancel2').disabled=false}
+}
+$('sellPositionBtn').onclick=openSellWindow;
+$('sellCancel').onclick=closeSellWindow;
+$('sellCancel2').onclick=closeSellWindow;
+$('sellConfirm').onclick=confirmSell;
+$('sellModal').addEventListener('click',e=>{if(e.target===$('sellModal'))closeSellWindow()});
 $('saveCreds').onclick=saveLiveCredentials;
 $('armLive').onclick=armLive;
 $('disarmLive').onclick=disarmLive;
@@ -346,6 +401,8 @@ function renderTradeWindow(){
  const t=liveTrade;
  $('tradeTicker').textContent=t.ticker||'Waiting for a live position…';
  const open=Math.abs(Number(t.position)||0)>0;
+ $('sellPositionBtn').disabled=!open;
+ $('sellHint').textContent=open?`Open ${Math.abs(Number(t.position)).toFixed(0)} contract${Math.abs(Number(t.position)===1)?'':'s'} • click to review exit`:'No open live position';
  const order=latestLiveOrder(t.ticker||liveTicker);
  const hasOrder=Boolean(order);
  $('tradeState').textContent=open?'POSITION OPEN':(hasOrder?'POSITION FLAT / AWAITING SETTLEMENT':'NO LIVE POSITION');
