@@ -130,7 +130,10 @@ function calc(){syncMinuteFromContractClock();
  if(!liveTicker||!liveMarket||!dataFresh){risk='CRITICAL';action='WAIT';confidence=0;reasons=['live market data missing or stale']}else if(!priceSane){risk='CRITICAL';action='WAIT';confidence=0;reasons=['market price data failed sanity check']}else if(confidence<62){risk='HIGH';action='WAIT'}else if(disagreement||(bs.spread!==null&&bs.spread>8)){risk='HIGH';action='WATCH'}else if(secondsToClose!==null&&secondsToClose<60){risk='HIGH';action='WATCH'}else{risk='LOW';action='PAPER READY'}
  const feature={ts:Date.now(),btc,target,marketUpPct:up,downPct:down,pick,score,confidence,risk,action,distancePct,secondsToClose,marketVelocity,btcVelocity,...bs,flipCount,flipUpToDown,flipDownToUp,historicalFlipAverage:flipStats.average,historicalFlipMedian:flipStats.median,flipSamples:flipStats.count,components:c,weights:w,marketTicker:liveTicker};lastFeature=feature;
  $('flipCount').textContent=`${flipCount}`;$('flipAverage').textContent=flipStats.average===null?'—':flipStats.average.toFixed(1);$('flipTrend').textContent=flipStats.count<3?'COLLECTING':`${flipCount} current • ${flipStats.average.toFixed(1)} avg`;
- $('window').textContent=`${windowNumber} / 15`;$('btcView').textContent=money(btc);$('targetView').textContent=money(target);$('pick').textContent=pick;$('confidence').textContent=pct(confidence);$('risk').textContent=risk;$('action').textContent=action;$('score').textContent=score.toFixed(1);$('spread').textContent=bs.spread===null?'—':bs.spread.toFixed(1)+'¢';$('imbalance').textContent=bs.imbalance===null?'—':bs.imbalance.toFixed(2);$('countdown').textContent=secondsToClose===null?'—':`${Math.floor(secondsToClose/60)}:${String(Math.floor(secondsToClose%60)).padStart(2,'0')}`;$('alert').textContent=action==='WAIT'?'WAIT — engine does not have enough clean data to act.':reasons.join(' • ');$('reason').textContent=`Adaptive score ${score.toFixed(1)} using learned weights after ${learning.completed} completed windows.`;return feature;
+ // CONTRACT WINDOW is the minute position inside the active 15-minute contract.
+ // windowNumber remains an internal daily sequence for persisted records.
+ syncMinuteFromContractClock();
+ $('window').textContent=`${minute} / 15`;$('btcView').textContent=money(btc);$('targetView').textContent=money(target);$('pick').textContent=pick;$('confidence').textContent=pct(confidence);$('risk').textContent=risk;$('action').textContent=action;$('score').textContent=score.toFixed(1);$('spread').textContent=bs.spread===null?'—':bs.spread.toFixed(1)+'¢';$('imbalance').textContent=bs.imbalance===null?'—':bs.imbalance.toFixed(2);$('countdown').textContent=secondsToClose===null?'—':`${Math.floor(secondsToClose/60)}:${String(Math.floor(secondsToClose%60)).padStart(2,'0')}`;$('alert').textContent=action==='WAIT'?'WAIT — engine does not have enough clean data to act.':reasons.join(' • ');$('reason').textContent=`Adaptive score ${score.toFixed(1)} using learned weights after ${learning.completed} completed windows.`;return feature;
 }
 async function record(){const r=calc();const row={id:`${windowId}:${Date.now()}`,type:'OBSERVATION',date:day(),timestamp:new Date().toISOString(),windowNumber,windowId,windowStart,minute,...r,result:'PENDING'};rows.push(row);render();await persist()}
 async function recordObservationIfNeeded(){if(!liveTicker||!liveMarket)return;syncMinuteFromContractClock();const key=`${liveTicker}:${minute}`;if(key===lastAutoObservationKey)return;const r=calc();const row={id:`${windowId}:OBS:${minute}`,type:'OBSERVATION',date:day(),timestamp:new Date().toISOString(),windowNumber,windowId,windowStart,minute,...r,result:'PENDING'};rows.push(row);lastAutoObservationKey=key;render();await persist()}
@@ -161,7 +164,7 @@ function syncWindowNumberForContract(m){
  const lastStart=new Date(latest.windowStart).getTime();
  if(!Number.isFinite(lastStart))return;
  const buckets=Math.max(0,Math.floor((currentStart-lastStart)/(15*60*1000)));
- windowNumber=clamp((Number(latest.windowNumber)||1)+buckets,1,15);
+ windowNumber=Math.max(1,(Number(latest.windowNumber)||1)+buckets);
 }
 async function refreshKalshi(force=false){try{
  let previousExpired=false;
@@ -184,7 +187,9 @@ async function refreshKalshi(force=false){try{
  if(hadTicker){
    // A new ticker is the authoritative rollover event. Do not depend on the
    // previous contract status check succeeding; polling can miss the exact close.
-   windowNumber=Math.min(15,windowNumber+1);
+   // windowNumber is an internal daily sequence; it must never be capped at 15.
+   // The visible CONTRACT WINDOW is the minute within the active 15-minute contract.
+   windowNumber=Math.max(1,windowNumber+1);
  }else{
    // On startup/reload, recover the correct daily position from persisted records.
    syncWindowNumberForContract(snap);
