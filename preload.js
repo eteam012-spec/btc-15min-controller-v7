@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('controllerAPI', {
   kalshiFills: params => ipcRenderer.invoke('kalshi:fills', params || {}),
   kalshiSettlements: params => ipcRenderer.invoke('kalshi:settlements', params || {}),
   kalshiOrder: order => ipcRenderer.invoke('kalshi:order', order),
+  kalshiSell: order => ipcRenderer.invoke('kalshi:sell', order),
   kalshiAutoOrder: order => ipcRenderer.invoke('kalshi:autoOrder', order),
   kalshiMarkets: params => ipcRenderer.invoke('kalshi:markets', params),
   kalshiMarket: ticker => ipcRenderer.invoke('kalshi:market', ticker),
