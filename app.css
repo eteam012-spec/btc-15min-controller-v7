@@ -222,3 +222,26 @@ button { touch-action: manipulation; }
 .trade-empty{height:100%;display:grid;place-items:center;color:#607b88;font-size:12px}
 @media(max-width:1100px){.trade-grid{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:700px){.trade-grid{grid-template-columns:repeat(2,1fr)}.trade-head{flex-direction:column}.trade-orderbar{display:grid;grid-template-columns:1fr 1fr}.trade-metric strong{font-size:18px}}
+
+/* V9.26 — manual live sell/close window */
+.trade-sellbar{display:flex;align-items:center;gap:12px;margin-top:14px;padding:12px;border:1px solid #315064;border-radius:10px;background:#09141d}
+.sell-btn{min-width:210px}
+.sell-btn:disabled{opacity:.45;cursor:not-allowed}
+.sell-hint,#sellHint{color:var(--muted);font-size:12px}
+.sell-modal{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:18px;background:rgba(2,7,11,.82);backdrop-filter:blur(5px)}
+.sell-modal[hidden]{display:none}
+.sell-card{width:min(620px,96vw);background:#0d1922;border:1px solid #4a6877;border-radius:14px;padding:20px;box-shadow:0 30px 100px #000c}
+.sell-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
+.sell-head h2{margin:5px 0 0}
+.sell-close{min-width:52px;width:52px;padding:0;font-size:28px;line-height:1}
+.sell-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0}
+.sell-grid>div{padding:12px;border:1px solid #1f3947;border-radius:9px;background:#09141d}
+.sell-grid span{display:block;color:var(--muted);font-size:10px;letter-spacing:.8px}
+.sell-grid strong{display:block;margin-top:6px;font-size:17px;overflow-wrap:anywhere}
+.sell-qty-label{display:block;margin-top:8px;color:var(--muted)}
+.sell-warning{margin-top:12px;padding:11px;border:1px dashed #8b6d28;border-radius:9px;color:var(--warn);font-size:12px}
+.sell-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.sell-confirm{border-color:#8b3d48;background:#35171d}
+.sell-confirm:hover{background:#4a2028}
+.sell-positive{color:var(--good)!important}.sell-negative{color:var(--bad)!important}
+@media(max-width:700px){.sell-grid{grid-template-columns:1fr 1fr}.trade-sellbar{align-items:stretch;flex-direction:column}.sell-btn{width:100%}}
