@@ -490,6 +490,30 @@ function autoExitPrice(outcome){
   if(outcome==='DOWN'&&yesAsk!==null)return clamp(Math.ceil(yesAsk),1,99);
   return null;
 }
+function autoLossGuard(){
+  // HARD LOSS GUARD: once the live position has lost 80% or more of its
+  // entry cost at the executable mark, request a reduce-only exit immediately.
+  // This is a safety target, not a guaranteed fill: a fast market can gap
+  // through the threshold or have insufficient liquidity.
+  if(!autoPosition||!liveTicker)return null;
+  const order=latestLiveOrder(liveTicker);
+  const entry=Number(order?.entryPriceCents);
+  if(!Number.isFinite(entry)||entry<=0)return null;
+  const outcome=autoPosition.yesPosition>0?'UP':'DOWN';
+  const mark=outcome==='UP'?pctPrice(liveMarket?.yesBid):(pctPrice(liveMarket?.yesAsk)!==null?100-pctPrice(liveMarket?.yesAsk):null);
+  if(mark===null)return null;
+  const lossPct=Math.max(0,((entry-mark)/entry)*100);
+  const flipImminent=(autoPosition.yesPosition>0&&(
+      kalshiDirection(liveMarket)==='DOWN' ||
+      (Number.isFinite(lastFeature?.marketVelocity)&&lastFeature.marketVelocity<=-1.5) ||
+      (Number.isFinite(lastFeature?.btcVelocity)&&lastFeature.btcVelocity<=-1.5)
+    ))||(autoPosition.yesPosition<0&&(
+      kalshiDirection(liveMarket)==='UP' ||
+      (Number.isFinite(lastFeature?.marketVelocity)&&lastFeature.marketVelocity>=1.5) ||
+      (Number.isFinite(lastFeature?.btcVelocity)&&lastFeature.btcVelocity>=1.5)
+    ));
+  return {outcome,entry,mark,lossPct,flipImminent,trigger:lossPct>=80||flipImminent};
+}
 async function autoOrder(outcome,priceCents,count,reduceOnly=false){
   const side=reduceOnly ? (outcome==='UP'?'ask':'bid') : 'bid';
   // Strategy prices are expressed as the selected outcome's economic price.
@@ -510,6 +534,25 @@ async function autoTradeTick(){
    if(dailyLossCents>=s.dailyLoss*100){$('autoStatus').textContent='AUTO LIVE: HALTED • DAILY LOSS LIMIT';return}
    await autoReconcile();
    const secs=f.secondsToClose;
+
+   // Dedicated loss/flip guard runs before the broader risk logic. It is
+   // intentionally independent of the strategy score so a rapidly reversing
+   // position can be flattened even when the score has not caught up.
+   const lossGuard=autoLossGuard();
+   if(lossGuard?.trigger){
+     const p=autoExitPrice(lossGuard.outcome);
+     const qty=Math.max(1,Math.floor(Math.abs(autoPosition.yesPosition)));
+     const reason=lossGuard.lossPct>=80
+       ? `LOSS GUARD ${lossGuard.lossPct.toFixed(0)}% OF ENTRY`
+       : 'FLIP GUARD — REVERSAL DETECTED';
+     $('autoStatus').textContent=`AUTO LIVE: ${reason} • CLOSING ${lossGuard.outcome}`;
+     if(p!==null&&Date.now()-lastAutoActionAt>1500){
+       await autoOrder(lossGuard.outcome,p,qty,true);
+       lastAutoActionAt=Date.now();
+       await autoReconcile();
+     }
+     return;
+   }
 
    // Continuous mode: a ticker change is a normal rollover, not a reason to
    // disarm. startWindow() resets the per-window entry/no-trade state.
