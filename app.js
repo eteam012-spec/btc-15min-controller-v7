@@ -253,12 +253,15 @@ async function liveExecute(){
     const maxEntryPrice=clamp(Number($('liveMaxEntryPrice').value)||85,1,99);
     if(priceCents!==null&&priceCents>maxEntryPrice)throw new Error(`Entry price ${priceCents}¢ exceeds max entry ${maxEntryPrice.toFixed(0)}¢ — no chase`);
     if(priceCents===null)throw new Error('No executable live quote available');
-    const count=Math.floor((maxSpend*100)/priceCents);
-    if(count<1)throw new Error(`Max spend ${maxSpend.toFixed(2)} is below one contract at ${priceCents}¢`);
-    $('liveStatus').textContent=`LIVE ORDER PREVIEW: ${f.pick} • ${count} contract(s) • ${priceCents}¢ max • ${(count*priceCents/100).toFixed(2)} max cost • ${liveTicker}`;
+    // Manual diagnostic mode is intentionally hard-capped at exactly one contract.
+    // The dollar limit remains a safety check, but can never cause multiple contracts.
+    const count=1;
+    const estimatedCost=priceCents/100;
+    if(estimatedCost>maxSpend)throw new Error(`One contract at ${priceCents}¢ exceeds max spend ${maxSpend.toFixed(2)}`);
+    $('liveStatus').textContent=`LIVE ORDER PREVIEW: ${f.pick} • 1 contract • ${priceCents}¢ max • ${estimatedCost.toFixed(2)} max cost • ${liveTicker}`;
     const r=await window.controllerAPI.kalshiOrder({ticker:liveTicker,outcome:f.pick,count,priceCents,exchangeIndex:Number.isInteger(liveMarket?.exchangeIndex)?liveMarket.exchangeIndex:-1});
     const filled=Number(r.fill_count??r.filled_count??r.fill_count_fp??0);
-    $('liveStatus').textContent='LIVE ORDER SUBMITTED • '+f.pick+' • '+count+' contracts • '+priceCents+'¢ • order '+(r.order_id||'accepted')+' • filled '+filled;
+    $('liveStatus').textContent='LIVE ORDER SUBMITTED • '+f.pick+' • 1 contract • '+priceCents+'¢ • order '+(r.order_id||'accepted')+' • filled '+filled;
     rows.push({id:windowId+':LIVE:'+Date.now(),date:day(),timestamp:new Date().toISOString(),windowId,windowStart,minute,marketTicker:liveTicker,type:'LIVE_ORDER',side:f.pick,entryPriceCents:priceCents,count,orderId:r.order_id||'',clientOrderId:r.clientOrderId||'',fillCount:filled,result:'PENDING'});
     await persist();
   }catch(e){$('liveStatus').textContent='LIVE ORDER BLOCKED/FAILED: '+e.message}
