@@ -1,13 +1,13 @@
 {
   "name": "btc-15m-controller-v7",
   "productName": "BTC 15-Minute Controller",
-  "version":"9.13.0",
+  "version":"9.14.0",
   "private": true,
-  "description": "Tablet-friendly local BTC 15-minute adaptive strategy and controlled live execution controller V9.13",
+  "description": "Tablet-friendly local BTC 15-minute adaptive strategy and controlled live execution controller V9.14",
   "author": "eteam012-spec",
   "license": "MIT",
   "main": "main.js",
-  "scripts": { "start": "electron .", "dev": "electron ." },
+  "scripts": { "start": "electron .", "dev": "electron .", "test": "node live-client.test.js" },
   "devDependencies": {
     "electron": "^42.4.1",
     "@electron-forge/cli": "^7.8.1",
