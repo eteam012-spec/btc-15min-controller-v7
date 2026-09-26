@@ -222,7 +222,7 @@ async function armLive(){
   try{const r=await window.controllerAPI.kalshiArm();$('liveStatus').textContent=r.armed?'LIVE EXECUTION: ARMED':'LIVE EXECUTION: DISARMED'}catch(e){$('liveStatus').textContent='ARM ERROR: '+e.message}
 }
 async function disarmLive(){try{await window.controllerAPI.kalshiDisarm();$('liveStatus').textContent='LIVE EXECUTION: DISARMED'}catch(e){$('liveStatus').textContent='DISARM ERROR: '+e.message}}
-async function liveBalance(){try{const r=await window.controllerAPI.kalshiBalance(Number.isInteger(liveMarket?.exchangeIndex)?liveMarket.exchangeIndex:undefined);const cents=Number(r.balance);$('liveStatus').textContent=Number.isFinite(cents)?`LIVE BALANCE: ${(cents/100).toFixed(2)}`:'BALANCE RESPONSE RECEIVED';return cents}catch(e){$('liveStatus').textContent='BALANCE ERROR: '+e.message;return null}}
+async function liveBalance(){try{const exchangeIndex=Number.isInteger(liveMarket?.exchangeIndex)?liveMarket.exchangeIndex:undefined;const r=await window.controllerAPI.kalshiBalance(exchangeIndex);const cents=Number(r.balance);const tradingCents=Number(r.exchange_balance);const displayCents=Number.isFinite(cents)?cents:tradingCents;$('liveStatus').textContent=Number.isFinite(displayCents)?`LIVE BALANCE: ${(displayCents/100).toFixed(2)}${Number.isFinite(tradingCents)&&exchangeIndex!==undefined?` • EXCHANGE ${exchangeIndex}: ${(tradingCents/100).toFixed(2)}`:''}`:'BALANCE RESPONSE RECEIVED';return Number.isFinite(tradingCents)?tradingCents:displayCents}catch(e){$('liveStatus').textContent='BALANCE ERROR: '+e.message;return null}}
 function liveQuoteCents(outcome){
   // For an immediate-or-cancel buy, use the actual ask for the outcome.
   // Deriving the price from the opposite-side bid can overstate the price
