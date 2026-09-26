@@ -1,13 +1,17 @@
 {
   "name": "btc-15m-controller-v7",
   "productName": "BTC 15-Minute Controller",
-  "version":"9.15.0",
+  "version": "9.16.0",
   "private": true,
-  "description": "Tablet-friendly local BTC 15-minute adaptive strategy and controlled live execution controller V9.15",
+  "description": "Tablet-friendly local BTC 15-minute adaptive strategy and controlled live execution controller V9.16",
   "author": "eteam012-spec",
   "license": "MIT",
   "main": "main.js",
-  "scripts": { "start": "electron .", "dev": "electron .", "test": "node live-client.test.js" },
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "test": "node live-client.test.js"
+  },
   "devDependencies": {
     "electron": "^42.4.1",
     "@electron-forge/cli": "^7.8.1",
@@ -16,10 +20,24 @@
   },
   "config": {
     "forge": {
-      "packagerConfig": { "asar": true, "name": "BTC15MinuteController", "executableName": "BTC15MinuteController" },
+      "packagerConfig": {
+        "asar": true,
+        "name": "BTC15MinuteController",
+        "executableName": "BTC15MinuteController"
+      },
       "makers": [
-        { "name": "@electron-forge/maker-squirrel", "config": { "name": "btc_15_minute_controller" } },
-        { "name": "@electron-forge/maker-zip", "platforms": ["win32"] }
+        {
+          "name": "@electron-forge/maker-squirrel",
+          "config": {
+            "name": "btc_15_minute_controller"
+          }
+        },
+        {
+          "name": "@electron-forge/maker-zip",
+          "platforms": [
+            "win32"
+          ]
+        }
       ]
     }
   }
