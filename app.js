@@ -14,6 +14,8 @@ const day=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth
 let autoLive=false,noTradeWindow=false,autoBusy=false,autoEntryDoneTicker=null,autoPosition=null,lastAutoActionAt=0,dailyLossCents=0,autoDay=day();;
 let liveTrade={ticker:null,position:0,side:null,count:0,entryCents:null,markCents:null,pnlCents:null,balanceCents:null,fee:null,orderId:null,result:'PENDING',startedAt:null,points:[]};
 let liveTradeBusy=false;
+let liveSettlementQueue=new Map();
+let lastLiveSettlement=null;
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const direction=n=>n>=0?'UP':'DOWN';
 function minuteFromContractClock(closeTime){
@@ -39,6 +41,7 @@ async function startApp(){
  const savedWindowNumbers=todayRecords.map(r=>Number(r.windowNumber));
  if(savedWindowNumbers.length)windowNumber=Math.max(1,...savedWindowNumbers);
  loadLearning();
+lastLiveSettlement=allRecords.slice().reverse().find(r=>r.type==='LIVE_SETTLEMENT')||null;
  // Repair legacy PAPER_ORDER results that were compared using r.pick instead of r.side.
  let repaired=false;
  for(const r of allRecords){
@@ -154,7 +157,7 @@ async function paperExecute(){const f=calc();if(f.action!=='PAPER READY'){$('ord
 async function rollover(){if(switching)return;switching=true;try{if(rows.length===0)await record();if(liveMarket&&!['yes','no'].includes(String(liveMarket.result||'').toLowerCase())){$('contractState').textContent='EXPIRED / AWAITING OFFICIAL RESULT';return}if(liveMarket)await finalizeWindowIfOfficial();await persist();await refreshKalshi(true)}finally{switching=false}}
 function renderLearning(){const w=learning.windows;const weights=learnedWeights();$('learnWindows').textContent=learning.completed;$('learnAccuracy').textContent=w.length?pct(learning.accuracy):'—';$('learnMode').textContent=learning.completed<10?'BASELINE / COLLECTING':`ADAPTIVE / ${learning.completed} WINDOWS`;$('modelVersion').textContent=String(learning.version);$('learnSummary').textContent=learning.completed<10?`Collecting completed windows before adaptive weighting. ${Math.max(0,10-learning.completed)} more window${10-learning.completed===1?'':'s'} needed.`:`Learning active. Weights adapt from recent completed-window component accuracy; no single window can dominate the model.`;$('weights').textContent='Weights: '+Object.entries(weights).map(([k,v])=>`${k} ${v.toFixed(2)}`).join(' • ')}
 function render(){const stored=allRecords.filter(r=>r.type!=='LEARNING_MODEL').length+rows.length;$('daily').textContent=`Today: ${allRecords.filter(r=>r.date===day()&&r.type!=='LEARNING_MODEL').length+rows.filter(r=>r.date===day()).length} records • Total stored: ${stored}`;$('history').innerHTML=rows.slice().reverse().map(r=>`<div class="row">${r.type==='PAPER_ORDER'?'ORDER':'M'+r.minute} • ${r.side||r.pick||'—'} • ${r.risk||'—'} • ${r.action||'—'} • ${r.result||'PENDING'}</div>`).join('');if(paperPosition&&paperPosition.ticker===liveTicker){$('orderStatus').textContent=`OPEN PAPER POSITION: ${paperPosition.side} @ ${Number(paperPosition.entryPct).toFixed(1)}¢ • WINDOW ${paperPosition.windowId}`}renderLearning()}
-function exportCSV(){const data=allRecords.filter(r=>r.type!=='LEARNING_MODEL').concat(rows);const headers=['date','timestamp','windowId','windowStart','minute','btc','target','marketUpPct','downPct','pick','score','confidence','risk','action','distancePct','secondsToClose','marketVelocity','btcVelocity','yesDepth','noDepth','imbalance','spread','flipCount','flipUpToDown','flipDownToUp','historicalFlipAverage','historicalFlipMedian','flipSamples','marketTicker','settlement','result','officialSettlement','type','side','entryPriceCents','paperOutcome','paperPnlCents'];const csv=[headers.join(','),...data.map(r=>headers.map(h=>`"${String(r[h]??'').replaceAll('"','""')}"`).join(','))].join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download=`BTC_15M_${day()}.csv`;a.click()}
+function exportCSV(){const data=allRecords.filter(r=>r.type!=='LEARNING_MODEL').concat(rows);const headers=['date','timestamp','windowId','windowStart','minute','btc','target','marketUpPct','downPct','pick','score','confidence','risk','action','distancePct','secondsToClose','marketVelocity','btcVelocity','yesDepth','noDepth','imbalance','spread','flipCount','flipUpToDown','flipDownToUp','historicalFlipAverage','historicalFlipMedian','flipSamples','marketTicker','settlement','result','officialSettlement','type','side','entryPriceCents','count','orderId','fee','positionAtClose','closedAt','pnlCents','status','paperOutcome','paperPnlCents'];const csv=[headers.join(','),...data.map(r=>headers.map(h=>`"${String(r[h]??'').replaceAll('"','""')}"`).join(','))].join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download=`BTC_15M_${day()}.csv`;a.click()}
 function isOpen(m){const s=String(m?.status||'').toLowerCase();return s==='open'||s==='active'}
 function candidate(markets){const arr=(markets||[]).filter(m=>{const t=((m.title||'')+' '+(m.subtitle||'')+' '+(m.ticker||'')+' '+(m.event_ticker||'')).toLowerCase();return(t.includes('bitcoin')||t.includes('btc'))&&/15\s*min|15-minute|15minute/.test(t)&&isOpen(m)});arr.sort((a,b)=>new Date(a.close_time||a.expiration_time||0)-new Date(b.close_time||b.expiration_time||0));return arr.find(m=>new Date(m.close_time||m.expiration_time||0)>new Date())||null}
 async function refreshBtc(){try{const r=await window.controllerAPI.btcSpot();if(Number.isFinite(Number(r.price))){$('btc').value=Number(r.price).toFixed(2);lastBtcAt=Date.now();$('btcSource').textContent='LIVE BTC: '+(r.sources||[]).map(x=>x.source).join(' + ')+' median • SPOT PROXY';calc()}}catch(e){$('btcSource').textContent='LIVE BTC: UNAVAILABLE — WAITING FOR FRESH DATA';calc()}}
@@ -170,35 +173,31 @@ function syncWindowNumberForContract(m){
  windowNumber=Math.max(1,(Number(latest.windowNumber)||1)+buckets);
 }
 async function refreshKalshi(force=false){try{
- let previousExpired=false;
- // Retry every recently expired window until Kalshi publishes its official result.
- // This prevents a result that becomes official a few seconds after close from
- // being lost forever and leaving the learning counter at zero.
- for(const ticker of Array.from(pendingWindows.keys())){
-   try{const snap=await window.controllerAPI.kalshiSnapshot(ticker);await finalizePending(ticker,snap)}catch(_){}
- }
+ for(const ticker of Array.from(liveSettlementQueue.keys())){try{const snap=await window.controllerAPI.kalshiSnapshot(ticker);await finalizeLiveSettlement(ticker,snap)}catch(_){ }}
+ for(const ticker of Array.from(pendingWindows.keys())){try{const snap=await window.controllerAPI.kalshiSnapshot(ticker);await finalizePending(ticker,snap)}catch(_){ }}
  if(liveTicker&&liveMarket){
    const old=await window.controllerAPI.kalshiSnapshot(liveTicker);
    const oldClose=new Date(old.closeTime||old.expirationTime||0).getTime();
    if(oldClose&&Date.now()>=oldClose){
-     previousExpired=true;
-     pendingWindows.set(liveTicker,pendingWindows.get(liveTicker)||{windowId,windowStart,rows:[...rows]});
-     rows=[];
-     await finalizePending(liveTicker,old);
+     pendingWindows.set(liveTicker,pendingWindows.get(liveTicker)||{windowId,windowStart,rows:[...rows]});rows=[];
+     await lockLiveSettlement(liveTicker,old);await finalizePending(liveTicker,old);await finalizeLiveSettlement(liveTicker,old);
    }
- }const resp=await window.controllerAPI.kalshiMarkets({limit:1000,status:'open',seriesTicker:'KXBTC15M'}),m=candidate(resp.markets||[]);if(!m){$('feed').textContent='LIVE ADAPTER: NO OPEN BTC 15-MINUTE CONTRACT FOUND — NOT GUESSING';$('contractState').textContent='NO ACTIVE CONTRACT';liveTicker=null;liveMarket=null;calc();return}const snap=await window.controllerAPI.kalshiSnapshot(m.ticker),hadTicker=Boolean(liveTicker),changed=liveTicker!==snap.ticker;if(changed){
- if(hadTicker){
-   // A new ticker is the authoritative rollover event. Do not depend on the
-   // previous contract status check succeeding; polling can miss the exact close.
-   // windowNumber is an internal daily sequence; it must never be capped at 15.
-   // The visible CONTRACT WINDOW is the minute within the active 15-minute contract.
-   windowNumber=Math.max(1,windowNumber+1);
- }else{
-   // On startup/reload, recover the correct daily position from persisted records.
-   syncWindowNumberForContract(snap);
  }
- liveTicker=snap.ticker;liveMarket=snap;startWindow(snap)
-}else{liveTicker=snap.ticker;liveMarket=snap}const last=marketPrice(snap);const yesAsk=pctPrice(snap.yesAsk),noAsk=pctPrice(snap.noAsk),yesBid=pctPrice(snap.yesBid),noBid=pctPrice(snap.noBid);const executableUp=yesAsk??(noBid!==null?100-noBid:null);const executableDown=noAsk??(yesBid!==null?100-yesBid:null);if(executableUp!==null)$('up').value=executableUp.toFixed(1);else if(last!==null)$('up').value=last.toFixed(1);if(executableDown!==null)$('down').value=executableDown.toFixed(1);else if(last!==null)$('down').value=(100-last).toFixed(1);const strike=extractTarget(snap);if(strike!==null)$('target').value=strike;lastLiveAt=Date.now();$('ticker').textContent=liveTicker;$('feed').textContent='LIVE ADAPTER: CONNECTED • PUBLIC KALSHI MARKET DATA';$('contractState').textContent=String(snap.status||'UNKNOWN').toUpperCase();$('officialResult').textContent=snap.result||'PENDING';const close=new Date(snap.closeTime||snap.expirationTime||0);$('closeAt').textContent=isNaN(close.getTime())?'—':close.toLocaleTimeString();calc();render()}catch(e){$('feed').textContent='LIVE ADAPTER: STALE / UNAVAILABLE — NOT GUESSING';$('contractState').textContent='STALE';calc();render()}}
+ const resp=await window.controllerAPI.kalshiMarkets({limit:1000,status:'open',seriesTicker:'KXBTC15M'}),m=candidate(resp.markets||[]);
+ if(!m){$('feed').textContent='LIVE ADAPTER: NO OPEN BTC 15-MINUTE CONTRACT FOUND — NOT GUESSING';$('contractState').textContent='NO ACTIVE CONTRACT';liveTicker=null;liveMarket=null;calc();return}
+ const snap=await window.controllerAPI.kalshiSnapshot(m.ticker),hadTicker=Boolean(liveTicker),changed=liveTicker!==snap.ticker;
+ if(changed){
+   if(hadTicker)windowNumber=Math.max(1,windowNumber+1);else syncWindowNumberForContract(snap);
+   liveTicker=snap.ticker;liveMarket=snap;startWindow(snap);renderSettlementStatus();
+ }else{liveTicker=snap.ticker;liveMarket=snap}
+ const last=marketPrice(snap),yesAsk=pctPrice(snap.yesAsk),noAsk=pctPrice(snap.noAsk),yesBid=pctPrice(snap.yesBid),noBid=pctPrice(snap.noBid);
+ const executableUp=yesAsk??(noBid!==null?100-noBid:null),executableDown=noAsk??(yesBid!==null?100-yesBid:null);
+ if(executableUp!==null)$('up').value=executableUp.toFixed(1);else if(last!==null)$('up').value=last.toFixed(1);
+ if(executableDown!==null)$('down').value=executableDown.toFixed(1);else if(last!==null)$('down').value=(100-last).toFixed(1);
+ const strike=extractTarget(snap);if(strike!==null)$('target').value=strike;lastLiveAt=Date.now();$('ticker').textContent=liveTicker;$('feed').textContent='LIVE ADAPTER: CONNECTED • PUBLIC KALSHI MARKET DATA';$('contractState').textContent=String(snap.status||'UNKNOWN').toUpperCase();$('officialResult').textContent=snap.result||'PENDING';
+ const close=new Date(snap.closeTime||snap.expirationTime||0);$('closeAt').textContent=isNaN(close.getTime())?'—':close.toLocaleTimeString();calc();render();
+ }catch(e){$('feed').textContent='LIVE ADAPTER: STALE / UNAVAILABLE — NOT GUESSING';$('contractState').textContent='STALE';calc();render()}}
+
 setInterval(()=>{if(lastLiveAt)$('age').textContent=Math.floor((Date.now()-lastLiveAt)/1000)+'s';calc();recordObservationIfNeeded().catch(e=>{$('feed').textContent='OBSERVATION ERROR: '+(e?.message||e)})},1000);
 setInterval(()=>{if(autoLive)refreshDailyLoss()},10000);
 setInterval(()=>refreshBtc(),3000);
@@ -293,6 +292,36 @@ function latestLiveOrder(ticker){
  return pool.filter(r=>r&&r.marketTicker===ticker&&['LIVE_ORDER','AUTO_ENTRY'].includes(r.type)&&Number(r.fillCount||0)>0)
    .sort((a,b)=>new Date(b.timestamp||0)-new Date(a.timestamp||0))[0]||null;
 }
+function settlementResultFromMarket(snapshot){
+ const result=String(snapshot?.result||'').toLowerCase();
+ return result==='yes'?'UP':(result==='no'?'DOWN':null);
+}
+function settlementRecordId(ticker){return 'LIVE_SETTLEMENT:'+String(ticker||'');}
+async function persistLiveSettlement(s){
+ const row={id:settlementRecordId(s.ticker),type:'LIVE_SETTLEMENT',date:day(),timestamp:new Date().toISOString(),marketTicker:s.ticker,orderId:s.orderId,side:s.side,count:s.count,entryPriceCents:s.entryCents,fee:s.fee,positionAtClose:s.positionAtClose,closedAt:s.closedAt,settlement:s.outcome||'PENDING',result:s.outcome||'PENDING',officialSettlement:Boolean(s.outcome),pnlCents:s.pnlCents,status:s.status};
+ allRecords=upsertRecords(allRecords,[row]);
+ await window.controllerAPI.writeRecords(upsertRecords(allRecords,[modelRecord()]));
+}
+async function lockLiveSettlement(ticker,snapshot){
+ if(!ticker||liveSettlementQueue.has(ticker))return liveSettlementQueue.get(ticker)||null;
+ const order=latestLiveOrder(ticker);if(!order)return null;
+ let position=0;try{const ex=Number.isInteger(snapshot?.exchangeIndex)?snapshot.exchangeIndex:undefined;position=parseLivePosition(await window.controllerAPI.kalshiPositions(ticker,ex),ticker)}catch(_){ }
+ const count=Math.abs(position)||Number(order.fillCount||order.count||0)||0;if(count<=0)return null;
+ const entry=Number(order.entryPriceCents),fee=Number(order.averageFeePaid);
+ const locked={ticker,orderId:order.orderId||null,side:order.side||null,count,entryCents:Number.isFinite(entry)?entry:null,fee:Number.isFinite(fee)?fee:null,positionAtClose:position,closedAt:new Date(snapshot?.closeTime||snapshot?.expirationTime||Date.now()).toISOString(),outcome:null,pnlCents:null,status:'CLOSED / AWAITING OFFICIAL RESULT'};
+ liveSettlementQueue.set(ticker,locked);lastLiveSettlement=locked;await persistLiveSettlement(locked);return locked;
+}
+async function finalizeLiveSettlement(ticker,snapshot){
+ const s=liveSettlementQueue.get(ticker);if(!s)return false;const outcome=settlementResultFromMarket(snapshot);if(!outcome)return false;
+ const entry=Number(s.entryCents),count=Number(s.count),fee=Number(s.fee);if(!Number.isFinite(entry)||!Number.isFinite(count)||count<=0)return false;
+ const win=s.side===outcome;s.outcome=outcome;s.pnlCents=(win?(100-entry):(-entry))*count-(Number.isFinite(fee)?fee*100:0);s.status='SETTLED';s.settledAt=new Date().toISOString();lastLiveSettlement=s;
+ await persistLiveSettlement(s);liveSettlementQueue.delete(ticker);try{await liveBalance()}catch(_){ }return true;
+}
+function renderSettlementStatus(){
+ const s=lastLiveSettlement;if(!s)return;const pnl=Number(s.pnlCents);const pnlText=Number.isFinite(pnl)?(pnl>=0?'+':'')+money(pnl/100):'PENDING';const result=s.outcome||'PENDING';
+ if(s.status==='SETTLED')$('tradeMessage').textContent='PREVIOUS WINDOW SETTLED • '+result+' • P/L '+pnlText+' • BALANCE REFRESHED';
+ else $('tradeMessage').textContent='PREVIOUS WINDOW CLOSED • AWAITING OFFICIAL SETTLEMENT';
+}
 function parseLivePosition(resp,ticker){
  const list=Array.isArray(resp?.market_positions)?resp.market_positions:Array.isArray(resp?.positions)?resp.positions:[];
  const x=list.find(v=>String(v.ticker||v.market_ticker||'')===ticker);
@@ -335,6 +364,7 @@ function renderTradeWindow(){
  if(t.result&&t.result!=='PENDING') $('tradeMessage').textContent=`WINDOW COMPLETE • OFFICIAL RESULT: ${t.result} • P/L ${t.pnlCents>=0?'+':''}${(t.pnlCents/100).toFixed(2)}`;
  else if(open) $('tradeMessage').textContent=`TRACKING LIVE • ${t.side} position • current mark ${Number.isFinite(t.markCents)?t.markCents.toFixed(1)+'¢':'—'} • ${formatTradeTime(t.secondsToClose)} remaining`;
  else if(hasOrder) $('tradeMessage').textContent='POSITION FLAT • tracking the completed order for its official settlement.';
+ else if(lastLiveSettlement&&lastLiveSettlement.ticker!==t.ticker) renderSettlementStatus();
 }
 async function refreshLiveTradeWindow(){
  if(liveTradeBusy||!liveTicker||!liveMarket)return;
