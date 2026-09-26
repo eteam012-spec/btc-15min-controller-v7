@@ -47,8 +47,56 @@ ipcMain.handle('kalshi:autoOrder',async(_e,p)=>{
   if(!liveArmed||!autoLive)throw new Error('AUTO LIVE is disarmed');
   const ticker=String(p?.ticker||''); const side=String(p?.side||''); const count=Number(p?.count); const priceCents=Number(p?.priceCents);
   if(!ticker||!['bid','ask'].includes(side)||!Number.isInteger(count)||count<1||!Number.isFinite(priceCents))throw new Error('Invalid auto order request');
+
+  // V9.22: auto-live gets the same last-second market/routing/quote checks
+  // as manual live execution. This prevents stale renderer data from reaching
+  // the real-money order endpoint.
+  const liveMarketResp=await httpsJson(`https://external-api.kalshi.com/trade-api/v2/markets/${encodeURIComponent(ticker)}`);
+  const liveM=liveMarketResp?.market||liveMarketResp;
+  const status=String(liveM?.status||'').toLowerCase();
+  if(!['open','active'].includes(status))throw new Error(`Market is not open for trading (status: ${liveM?.status||'unknown'})`);
+
+  const freshExchangeIndex=Number.isInteger(Number(liveM?.exchange_index))?Number(liveM.exchange_index):null;
+  const suppliedExchangeIndex=Number.isInteger(Number(p?.exchangeIndex))&&Number(p.exchangeIndex)>=0?Number(p.exchangeIndex):null;
+  if(freshExchangeIndex!==null&&suppliedExchangeIndex!==null&&freshExchangeIndex!==suppliedExchangeIndex){
+    throw new Error(`Market routing changed: controller had exchange ${suppliedExchangeIndex}, Kalshi now reports exchange ${freshExchangeIndex}. Refresh contract and retry.`);
+  }
+  const exchangeIndex=freshExchangeIndex!==null?freshExchangeIndex:suppliedExchangeIndex;
+
+  const ranges=Array.isArray(liveM?.price_ranges)?liveM.price_ranges:[];
+  if(ranges.length){
+    const dollars=priceCents/100;
+    const valid=ranges.some(r=>{
+      const start=Number(r?.start),end=Number(r?.end),step=Number(r?.step);
+      if(![start,end,step].every(Number.isFinite)||step<=0||dollars<start-1e-9||dollars>end+1e-9)return false;
+      const steps=Math.round((dollars-start)/step);
+      return Math.abs(dollars-(start+steps*step))<1e-8;
+    });
+    if(!valid)throw new Error(`Price ${priceCents}¢ is not a valid tick for the current market price structure.`);
+  }
+
+  // bid = buy YES, so its executable quote is YES ask.
+  // ask = sell YES, so its executable quote is YES bid.
+  const currentQuote=side==='bid'
+    ? Number(liveM?.yes_ask_dollars??liveM?.yes_ask)
+    : Number(liveM?.yes_bid_dollars??liveM?.yes_bid);
+  if(Number.isFinite(currentQuote)){
+    const currentCents=currentQuote<=1?currentQuote*100:currentQuote;
+    const currentRounded=side==='bid'
+      ? Math.ceil(currentCents-1e-9)
+      : Math.floor(currentCents+1e-9);
+    if(currentRounded!==priceCents){
+      throw new Error(`Live quote changed from ${priceCents}¢ to ${currentRounded}¢ before auto order submission.`);
+    }
+  }
+
   const clientOrderId='btc15-auto-'+crypto.randomUUID();
-  return {...await placeOrder(requireCreds(),{ticker,side,count,priceCents,clientOrderId,reduceOnly:Boolean(p?.reduceOnly),exchangeIndex:Number.isInteger(Number(p?.exchangeIndex))?Number(p.exchangeIndex):-1}),clientOrderId};
+  const result=await placeOrder(requireCreds(),{
+    ticker,side,count,priceCents,clientOrderId,
+    reduceOnly:Boolean(p?.reduceOnly),
+    exchangeIndex
+  });
+  return {...result,clientOrderId};
 });
 ipcMain.handle('kalshi:order',async(_e,p)=>{
   if(!liveArmed)throw new Error('LIVE execution is disarmed');
