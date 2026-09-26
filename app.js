@@ -64,13 +64,19 @@ async function recoverLearningFromRecords(){
    if(!groups.has(r.windowId))groups.set(r.windowId,[]);
    groups.get(r.windowId).push(r);
  }
- let added=0;
+ let changed=0;
  for(const rs of groups.values()){
    const settlement=String(rs.find(r=>r.settlement)?.settlement||'').toUpperCase();
    if(settlement!=='UP'&&settlement!=='DOWN')continue;
    const summary=summarizeWindow(rs,settlement);
-   if(summary&&!learning.windows.some(w=>w.windowId===summary.windowId)){
-     learning.windows.push(summary); added++;
+   if(!summary)continue;
+   const idx=learning.windows.findIndex(w=>w.windowId===summary.windowId);
+   if(idx<0){learning.windows.push(summary);changed++;}
+   else{
+     const prev=learning.windows[idx];
+     if(prev.flipCount!==summary.flipCount||prev.flipUpToDown!==summary.flipUpToDown||prev.flipDownToUp!==summary.flipDownToUp||prev.observations!==summary.observations){
+       learning.windows[idx]={...prev,...summary};changed++;
+     }
    }
  }
  learning.windows=learning.windows.slice(-250);
@@ -78,11 +84,11 @@ async function recoverLearningFromRecords(){
  learning.accuracy=learning.completed
    ? 100*learning.windows.filter(w=>w.correct).length/learning.completed
    : 0;
- if(added){
+ if(changed){
    learning.version++;
    await window.controllerAPI.writeRecords(upsertRecords(allRecords,[modelRecord()]));
  }
- return added;
+ return changed;
 }
 function startWindow(market){minute=1;windowId='W-'+Date.now();windowStart=new Date().toISOString();rows=[];paperPosition=null;autoPosition=null;autoEntryDoneTicker=null;noTradeWindow=false;lastAutoObservationKey='';flipState=null;flipCount=0;flipUpToDown=0;flipDownToUp=0;liveMarket=market||liveMarket;$('btc').value='';$('target').value=extractTarget(liveMarket) ?? DEFAULTS.target;render();calc()}
 function extractTarget(m){if(!m)return null;for(const x of [m.strike,m.raw?.floor_strike,m.raw?.strike,m.raw?.floor_strike_dollars]){const n=Number(x);if(Number.isFinite(n)&&n>1000)return n}return null}
@@ -105,7 +111,9 @@ function componentSignals({above,up,down,imbalance,marketVelocity,btcVelocity,di
 }
 function learnedWeights(){const n=learning.completed; if(n<10)return {...BASE_WEIGHTS}; return Object.fromEntries(Object.entries(learning.weights).map(([k,v])=>[k,clamp(v,0.4,1.8)]))}
 function historicalFlipStats(){const vals=learning.windows.map(w=>Number(w.flipCount)).filter(Number.isFinite);if(!vals.length)return {count:0,average:null,median:null};const sorted=[...vals].sort((a,b)=>a-b);const median=sorted.length%2?sorted[(sorted.length-1)/2]:(sorted[sorted.length/2-1]+sorted[sorted.length/2])/2;return {count:vals.length,average:vals.reduce((s,n)=>s+n,0)/vals.length,median};}
-function updateFlipState(up,down){const mid=(Number(up)+ (100-Number(down)))/2;if(!Number.isFinite(mid))return;let next=flipState;if(mid>=52)next='UP';else if(mid<=48)next='DOWN';if(next&&flipState&&next!==flipState){flipCount++;if(flipState==='UP'&&next==='DOWN')flipUpToDown++;if(flipState==='DOWN'&&next==='UP')flipDownToUp++;}flipState=next;}
+function regimeFromPrices(up,down){const u=Number(up),d=Number(down);if(!Number.isFinite(u)||!Number.isFinite(d))return null;const yesEquivalent=100-d;const mid=(u+yesEquivalent)/2;if(mid>=52)return 'UP';if(mid<=48)return 'DOWN';return null;}
+function deriveFlipStats(obs){let state=null,flips=0,upToDown=0,downToUp=0;for(const r of obs){const next=regimeFromPrices(r.marketUpPct,r.downPct);if(next&&state&&next!==state){flips++;if(state==='UP'&&next==='DOWN')upToDown++;if(state==='DOWN'&&next==='UP')downToUp++;}if(next)state=next;}return {flipCount:flips,flipUpToDown:upToDown,flipDownToUp:downToUp};}
+function updateFlipState(up,down){const next=regimeFromPrices(up,down);if(!next)return;if(next&&flipState&&next!==flipState){flipCount++;if(flipState==='UP'&&next==='DOWN')flipUpToDown++;if(flipState==='DOWN'&&next==='UP')flipDownToUp++;}flipState=next;}
 function calc(){syncMinuteFromContractClock();
  const btc=num($('btc').value)||0,target=num($('target').value)||0,up=num($('up').value)||0,down=num($('down').value)||0;
  const above=target>0?btc>=target:null,marketUp=up>=down,bs=bookStats(liveMarket);
@@ -128,7 +136,7 @@ async function record(){const r=calc();const row={id:`${windowId}:${Date.now()}`
 async function recordObservationIfNeeded(){if(!liveTicker||!liveMarket)return;syncMinuteFromContractClock();const key=`${liveTicker}:${minute}`;if(key===lastAutoObservationKey)return;const r=calc();const row={id:`${windowId}:OBS:${minute}`,type:'OBSERVATION',date:day(),timestamp:new Date().toISOString(),windowNumber,windowId,windowStart,minute,...r,result:'PENDING'};rows.push(row);lastAutoObservationKey=key;render();await persist()}
 function upsertRecords(base,add){const map=new Map();for(const r of base||[]){if(r.id)map.set(r.id,r)}for(const r of add||[]){if(r.id)map.set(r.id,r)}return [...map.values()]}
 async function persist(){allRecords=upsertRecords(allRecords,rows);await window.controllerAPI.writeRecords(upsertRecords(allRecords,[modelRecord()]));render()}
-function summarizeWindow(rs,settlement){const obs=rs.filter(r=>r.type==='OBSERVATION'&&r.components);if(!obs.length)return null;const last=obs[obs.length-1],avg=k=>obs.reduce((s,r)=>s+(Number(r[k])||0),0)/obs.length;const comps={};for(const k of Object.keys(BASE_WEIGHTS))comps[k]=avgComp(obs,k);const pick=last.pick;const correct=pick===settlement;return {windowNumber:last.windowNumber||windowNumber,windowId:last.windowId,windowStart:last.windowStart,ticker:last.marketTicker,settlement,pick,correct,score:last.score,confidence:last.confidence,flipCount:Number(last.flipCount)||0,flipUpToDown:Number(last.flipUpToDown)||0,flipDownToUp:Number(last.flipDownToUp)||0,components:comps,observations:obs.length,completedAt:new Date().toISOString()}}
+function summarizeWindow(rs,settlement){const obs=rs.filter(r=>r.type==='OBSERVATION'&&r.components).sort((a,b)=>new Date(a.timestamp||0)-new Date(b.timestamp||0));if(!obs.length)return null;const last=obs[obs.length-1],flips=deriveFlipStats(obs),avg=k=>obs.reduce((s,r)=>s+(Number(r[k])||0),0)/obs.length;const comps={};for(const k of Object.keys(BASE_WEIGHTS))comps[k]=avgComp(obs,k);const pick=last.pick;const correct=pick===settlement;return {windowNumber:last.windowNumber||windowNumber,windowId:last.windowId,windowStart:last.windowStart,ticker:last.marketTicker,settlement,pick,correct,score:last.score,confidence:last.confidence,flipCount:flips.flipCount,flipUpToDown:flips.flipUpToDown,flipDownToUp:flips.flipDownToUp,components:comps,observations:obs.length,completedAt:new Date().toISOString()}}
 function avgComp(obs,k){return obs.reduce((s,r)=>s+(Number(r.components?.[k])||0),0)/obs.length}
 async function learnFromWindow(summary){if(!summary)return;learning.completed++;learning.windows=learning.windows.filter(w=>w.windowId!==summary.windowId);learning.windows.push(summary);const completed=learning.windows.length;learning.accuracy=100*learning.windows.filter(w=>w.correct).length/Math.max(1,completed);
  if(completed>=10){for(const k of Object.keys(BASE_WEIGHTS)){const usable=learning.windows.slice(-50);const signals=usable.filter(w=>Math.abs(w.components?.[k]||0)>=0.05);if(signals.length<5)continue;let hits=0;for(const w of signals){const pred=(w.components[k]>=0?'UP':'DOWN');if(pred===w.settlement)hits++;}const acc=hits/signals.length;const edge=(acc-.5)*2;const target=clamp(1+edge,0.4,1.8);learning.weights[k]=clamp(learning.weights[k]*0.8+target*0.2,0.4,1.8)}}
