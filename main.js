@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, session, safeStorage, dialog } = require('electron');
 const https=require('https');const path=require('path');const fs=require('fs');const crypto=require('crypto');const {getBalance,getPositions,getFills,getSettlements,getOrder,placeIOC,placeOrder,request}=require('./live-client');
 let mainWindow;let liveArmed=false;let autoLive=false;let liveFirstOrderConfirmed=false;const dataDir=path.join(app.getPath('userData'),'data');const recordsFile=path.join(dataDir,'records.json');const credentialsFile=path.join(dataDir,'kalshi.credentials');
-function httpsJson(url,timeoutMs=7000){return new Promise((resolve,reject)=>{const req=https.get(url,{headers:{'User-Agent':'BTC-15M-Controller/9.4'}},res=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{if(res.statusCode<200||res.statusCode>=300)return reject(new Error(`HTTP ${res.statusCode}`));try{resolve(JSON.parse(d))}catch(e){reject(e)}})});req.setTimeout(timeoutMs,()=>req.destroy(new Error('Request timed out')));req.on('error',reject)})}
+function httpsJson(url,timeoutMs=7000){return new Promise((resolve,reject)=>{const req=https.get(url,{headers:{'User-Agent':'BTC-15M-Controller/9.26'}},res=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{if(res.statusCode<200||res.statusCode>=300)return reject(new Error(`HTTP ${res.statusCode}`));try{resolve(JSON.parse(d))}catch(e){reject(e)}})});req.setTimeout(timeoutMs,()=>req.destroy(new Error('Request timed out')));req.on('error',reject)})}
 function ensureDataDir(){fs.mkdirSync(dataDir,{recursive:true})}
 function saveCredentials(apiKeyId,privateKey){
   ensureDataDir();
@@ -97,6 +97,71 @@ ipcMain.handle('kalshi:autoOrder',async(_e,p)=>{
     exchangeIndex
   });
   return {...result,clientOrderId};
+});
+ipcMain.handle('kalshi:sell',async(_e,p)=>{
+  if(!liveArmed)throw new Error('LIVE execution is disarmed');
+  if(autoLive)throw new Error('Manual SELL is locked while AUTO LIVE is ON. Disarm AUTO first.');
+  const ticker=String(p?.ticker||'');
+  const outcome=String(p?.outcome||'').toUpperCase();
+  const count=Number(p?.count);
+  if(!ticker||!['UP','DOWN'].includes(outcome)||!Number.isInteger(count)||count<1)throw new Error('Invalid sell request');
+
+  const liveMarketResp=await httpsJson(`https://external-api.kalshi.com/trade-api/v2/markets/${encodeURIComponent(ticker)}`);
+  const liveM=liveMarketResp?.market||liveMarketResp;
+  const status=String(liveM?.status||'').toLowerCase();
+  if(!['open','active'].includes(status))throw new Error(`Market is not open for trading (status: ${liveM?.status||'unknown'})`);
+
+  const freshExchangeIndex=Number.isInteger(Number(liveM?.exchange_index))?Number(liveM.exchange_index):null;
+  const suppliedExchangeIndex=Number.isInteger(Number(p?.exchangeIndex))&&Number(p.exchangeIndex)>=0?Number(p.exchangeIndex):null;
+  if(freshExchangeIndex!==null&&suppliedExchangeIndex!==null&&freshExchangeIndex!==suppliedExchangeIndex){
+    throw new Error(`Market routing changed: controller had exchange ${suppliedExchangeIndex}, Kalshi now reports exchange ${freshExchangeIndex}. Refresh contract and retry.`);
+  }
+  const exchangeIndex=freshExchangeIndex!==null?freshExchangeIndex:suppliedExchangeIndex;
+
+  const posResp=await getPositions(requireCreds(),ticker,exchangeIndex);
+  const list=Array.isArray(posResp?.market_positions)?posResp.market_positions:(Array.isArray(posResp?.positions)?posResp.positions:[]);
+  const px=list.find(v=>String(v.ticker||v.market_ticker||'')===ticker);
+  const rawPos=Number(px?.position_fp??px?.position??px?.yes_position??0);
+  const position=Number.isFinite(rawPos)?rawPos:0;
+  if(position===0)throw new Error('No live position remains for this contract.');
+  const actualOutcome=position>0?'UP':'DOWN';
+  if(actualOutcome!==outcome)throw new Error(`Live position is ${actualOutcome}, not ${outcome}. Refresh the position monitor.`);
+  const available=Math.floor(Math.abs(position));
+  if(count>available)throw new Error(`Requested ${count} contract(s), but only ${available} are currently open.`);
+
+  // For an UP/YES position, flatten by selling YES at the current YES bid.
+  // For a DOWN/NO position, flatten by buying YES at the current YES ask.
+  const rawQuote=outcome==='UP'
+    ? Number(liveM?.yes_bid_dollars??liveM?.yes_bid)
+    : Number(liveM?.yes_ask_dollars??liveM?.yes_ask);
+  if(!Number.isFinite(rawQuote))throw new Error('No executable Kalshi exit quote is available.');
+  const quoteCents=rawQuote<=1?rawQuote*100:rawQuote;
+  const priceCents=outcome==='UP'?Math.floor(quoteCents+1e-9):Math.ceil(quoteCents-1e-9);
+  if(priceCents<1||priceCents>99)throw new Error('Kalshi exit quote is outside the valid price range.');
+
+  const confirm=await dialog.showMessageBox(mainWindow,{
+    type:'warning',
+    buttons:['CONFIRM SELL','CANCEL'],
+    defaultId:1,
+    cancelId:1,
+    noLink:true,
+    title:'CONFIRM LIVE POSITION SELL',
+    message:`SELL / CLOSE POSITION\\n\\n${outcome} • ${count} contract(s) • exit quote ${priceCents}¢\\nTicker: ${ticker}\\nExchange: ${exchangeIndex??'auto'}`,
+    detail:'This is a REAL MONEY reduce-only order. Kalshi position and quote were refreshed immediately before confirmation.'
+  });
+  if(confirm.response!==0)throw new Error('Sell canceled by user');
+
+  const clientOrderId=crypto.randomUUID();
+  const result=await placeIOC(requireCreds(),{
+    ticker,
+    outcome,
+    count,
+    priceCents,
+    clientOrderId,
+    reduceOnly:true,
+    exchangeIndex
+  });
+  return {...result,clientOrderId,outcome,count,priceCents};
 });
 ipcMain.handle('kalshi:order',async(_e,p)=>{
   if(!liveArmed)throw new Error('LIVE execution is disarmed');
