@@ -12,6 +12,8 @@ const money=n=>'$'+Number(n).toLocaleString(undefined,{minimumFractionDigits:2,m
 const pct=n=>Number.isFinite(n)?`${n.toFixed(1)}%`:'—';
 const day=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 let autoLive=false,noTradeWindow=false,autoBusy=false,autoEntryDoneTicker=null,autoPosition=null,lastAutoActionAt=0,dailyLossCents=0,autoDay=day();;
+let liveTrade={ticker:null,position:0,side:null,count:0,entryCents:null,markCents:null,pnlCents:null,balanceCents:null,fee:null,orderId:null,result:'PENDING',startedAt:null,points:[]};
+let liveTradeBusy=false;
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const direction=n=>n>=0?'UP':'DOWN';
 function minuteFromContractClock(closeTime){
@@ -51,6 +53,7 @@ async function startApp(){
  $('feed').textContent='LIVE ADAPTER: CONNECTING…';
  refreshBtc();
  refreshKalshi(true).finally(()=>{polling= polling || setInterval(()=>refreshKalshi(false),3000);});
+setTimeout(()=>refreshLiveTradeWindow(),1200);
 }
 function loadLearning(){
  const m=allRecords.slice().reverse().find(r=>r.type==='LEARNING_MODEL');
@@ -199,6 +202,7 @@ async function refreshKalshi(force=false){try{
 setInterval(()=>{if(lastLiveAt)$('age').textContent=Math.floor((Date.now()-lastLiveAt)/1000)+'s';calc();recordObservationIfNeeded().catch(e=>{$('feed').textContent='OBSERVATION ERROR: '+(e?.message||e)})},1000);
 setInterval(()=>{if(autoLive)refreshDailyLoss()},10000);
 setInterval(()=>refreshBtc(),3000);
+setInterval(()=>refreshLiveTradeWindow(),3000);
 $('update').onclick=record;$('next').onclick=async()=>{await refreshKalshi(true);await record();syncMinuteFromContractClock();calc();render()};$('newWindow').onclick=()=>refreshKalshi(true);$('paperOrder').onclick=paperExecute;$('export').onclick=exportCSV;
 async function liveSetup(){
   try{
@@ -284,6 +288,91 @@ $('liveExecute').onclick=liveExecute;
 startApp().catch(e=>{const msg='BOOT ERROR: '+(e?.message||e);$('feed').textContent=msg;$('btcSource').textContent='LIVE BTC: NOT STARTED';$('ticker').textContent='BOOT FAILED';$('contractState').textContent='BOOT FAILED';});
 liveSetup().catch(e=>{$('liveStatus').textContent='LIVE SETUP ERROR: '+(e?.message||e)});
 
+function latestLiveOrder(ticker){
+ const pool=allRecords.concat(rows);
+ return pool.filter(r=>r&&r.marketTicker===ticker&&['LIVE_ORDER','AUTO_ENTRY'].includes(r.type)&&Number(r.fillCount||0)>0)
+   .sort((a,b)=>new Date(b.timestamp||0)-new Date(a.timestamp||0))[0]||null;
+}
+function parseLivePosition(resp,ticker){
+ const list=Array.isArray(resp?.market_positions)?resp.market_positions:Array.isArray(resp?.positions)?resp.positions:[];
+ const x=list.find(v=>String(v.ticker||v.market_ticker||'')===ticker);
+ if(!x)return 0;
+ const n=Number(x.position_fp??x.position??x.yes_position??0);
+ return Number.isFinite(n)?n:0;
+}
+function formatTradeTime(seconds){
+ if(!Number.isFinite(seconds)||seconds<0)return '—';
+ const s=Math.floor(seconds); return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+}
+function renderTradeWindow(){
+ const t=liveTrade;
+ $('tradeTicker').textContent=t.ticker||'Waiting for a live position…';
+ const open=Math.abs(Number(t.position)||0)>0;
+ const order=latestLiveOrder(t.ticker||liveTicker);
+ const hasOrder=Boolean(order);
+ $('tradeState').textContent=open?'POSITION OPEN':(hasOrder?'POSITION FLAT / AWAITING SETTLEMENT':'NO LIVE POSITION');
+ $('tradeBalance').textContent=Number.isFinite(t.balanceCents)?money(t.balanceCents/100):'—';
+ $('tradePosition').textContent=open?`${t.side||'POSITION'} • ${Math.abs(t.position).toFixed(2)}`:(hasOrder?'FLAT':'—');
+ $('tradeEntry').textContent=Number.isFinite(t.entryCents)?t.entryCents.toFixed(1)+'¢':'—';
+ $('tradeMark').textContent=Number.isFinite(t.markCents)?t.markCents.toFixed(1)+'¢':'—';
+ const pnlText=Number.isFinite(t.pnlCents)?`${t.pnlCents>=0?'+':''}${(t.pnlCents/100).toFixed(2)}`:'—';
+ $('tradePnl').textContent=Number.isFinite(t.pnlCents)?(t.pnlCents>=0?'+':'')+money(t.pnlCents/100):'—';
+ $('tradePnl').className=t.pnlCents>0?'trade-positive':(t.pnlCents<0?'trade-negative':'');
+ $('tradeTime').textContent=formatTradeTime(t.secondsToClose);
+ $('tradeBet').textContent=t.side&&Number.isFinite(t.count)?`${t.side} • ${t.count.toFixed(2)} contract${t.count===1?'':'s'}`:'—';
+ $('tradeFill').textContent=Number.isFinite(t.entryCents)?t.entryCents.toFixed(2)+'¢':'—';
+ $('tradeFee').textContent=Number.isFinite(t.fee)?t.fee.toFixed(4):'—';
+ $('tradeOrder').textContent=t.orderId?t.orderId.slice(0,12)+'…':'—';
+ $('tradeResult').textContent=t.result||'PENDING';
+ const close=new Date(liveMarket?.closeTime||liveMarket?.expirationTime||0).getTime();
+ const start=close?close-15*60*1000:null;
+ const elapsed=start?clamp((Date.now()-start)/(15*60*1000),0,1):0;
+ $('tradeProgressPct').textContent=Math.round(elapsed*100)+'%';
+ $('tradeProgressBar').style.width=(elapsed*100)+'%';
+ $('tradeMinute').textContent=`MINUTE ${minute} / 15`;
+ const pts=t.points||[];
+ $('tradeChart').innerHTML=pts.length?pts.map((p,i)=>`<div class="trade-point" style="left:${p.x}%;bottom:${p.y}%"><span>${p.value.toFixed(1)}¢</span></div>`).join(''):'<div class="trade-empty">Waiting for first live mark…</div>';
+ if(t.result&&t.result!=='PENDING') $('tradeMessage').textContent=`WINDOW COMPLETE • OFFICIAL RESULT: ${t.result} • P/L ${t.pnlCents>=0?'+':''}${(t.pnlCents/100).toFixed(2)}`;
+ else if(open) $('tradeMessage').textContent=`TRACKING LIVE • ${t.side} position • current mark ${Number.isFinite(t.markCents)?t.markCents.toFixed(1)+'¢':'—'} • ${formatTradeTime(t.secondsToClose)} remaining`;
+ else if(hasOrder) $('tradeMessage').textContent='POSITION FLAT • tracking the completed order for its official settlement.';
+}
+async function refreshLiveTradeWindow(){
+ if(liveTradeBusy||!liveTicker||!liveMarket)return;
+ liveTradeBusy=true;
+ try{
+   const exchangeIndex=Number.isInteger(liveMarket?.exchangeIndex)?liveMarket.exchangeIndex:undefined;
+   const [posResp,balResp]=await Promise.all([
+     window.controllerAPI.kalshiPositions(liveTicker,exchangeIndex),
+     window.controllerAPI.kalshiBalance(exchangeIndex)
+   ]);
+   const pos=parseLivePosition(posResp,liveTicker);
+   const order=latestLiveOrder(liveTicker);
+   const bal=Number(balResp?.balance);
+   const entry=order?Number(order.entryPriceCents):null;
+   const fee=order?Number(order.averageFeePaid):null;
+   const side=pos>0?'UP':(pos<0?'DOWN':(order?.side||null));
+   const mark=pos>0?pctPrice(liveMarket?.yesBid):(pos<0?(pctPrice(liveMarket?.yesAsk)!==null?100-pctPrice(liveMarket?.yesAsk):null):null);
+   const count=Math.abs(pos)||Number(order?.fillCount||0)||0;
+   let pnl=null;
+   if(pos!==0&&Number.isFinite(entry)&&Number.isFinite(mark)) pnl=(mark-entry)*count-(Number.isFinite(fee)?fee*100:0);
+   const result=String(liveMarket?.result||'').toLowerCase();
+   const official=result==='yes'?'UP':(result==='no'?'DOWN':'PENDING');
+   if(pos===0&&order&&official!=='PENDING'){
+     const win=order.side===official;
+     pnl=(win?(100-entry):(-entry))*Number(order.fillCount||order.count||1)-(Number.isFinite(fee)?fee*100:0);
+   }
+   const close=new Date(liveMarket?.closeTime||liveMarket?.expirationTime||0).getTime();
+   const secondsToClose=close?Math.max(0,(close-Date.now())/1000):null;
+   liveTrade={ticker:liveTicker,position:pos,side, count,entryCents:Number.isFinite(entry)?entry:null,markCents:Number.isFinite(mark)?mark:null,pnlCents:Number.isFinite(pnl)?pnl:null,balanceCents:Number.isFinite(bal)?bal:null,fee:Number.isFinite(fee)?fee:null,orderId:order?.orderId||null,result:official,secondsToClose,startedAt:order?.timestamp||null,points:liveTrade.ticker===liveTicker?liveTrade.points||[]:[]};
+   if(Number.isFinite(mark)){
+     const pts=liveTrade.points.slice(-59);
+     const values=pts.map(p=>p.value).concat(mark);const min=Math.min(...values),max=Math.max(...values);const span=Math.max(1,max-min);
+     liveTrade.points=pts.concat([{x:clamp(((Date.now()-(close-15*60*1000))/(15*60*1000))*100,0,100),y:clamp(((mark-min)/span)*82+8,5,92),value:mark}]);
+   }
+   renderTradeWindow();
+ }catch(e){$('tradeMessage').textContent='LIVE TRADE MONITOR: '+(e?.message||e)}
+ finally{liveTradeBusy=false}
+}
 function autoResetDay(){if(autoDay!==day()){autoDay=day();dailyLossCents=0;}}
 function autoSettings(){return {riskPct:clamp(Number($('liveRiskPct').value)||2,0.5,10),maxSpend:Math.max(0.01,Number($('liveMaxSpend').value)||1),maxExposure:Math.max(0.01,Number($('liveMaxExposure').value)||2),dailyLoss:Math.max(0.01,Number($('liveDailyLoss').value)||2),maxEntryPrice:clamp(Number($('liveMaxEntryPrice').value)||85,1,99)}}
 function autoPositionFromResponse(p){const list=Array.isArray(p?.market_positions)?p.market_positions:Array.isArray(p?.positions)?p.positions:[];const x=list.find(v=>String(v.ticker||v.market_ticker||'')===liveTicker);if(!x)return null;const pos=Number(x.position_fp??x.position??x.yes_position??0);return Number.isFinite(pos)&&pos!==0?{ticker:liveTicker,yesPosition:pos}:null}
