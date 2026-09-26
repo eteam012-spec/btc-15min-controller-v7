@@ -31,7 +31,15 @@ ipcMain.handle('kalshi:disarm',()=>{liveArmed=false;autoLive=false;return {armed
 ipcMain.handle('kalshi:autoStatus',()=>({autoLive,liveArmed,credentialStored:Boolean(loadCredentials())}));
 ipcMain.handle('kalshi:autoArm',()=>{requireCreds();if(!liveArmed)throw new Error('ARM LIVE first');autoLive=true;return {autoLive:true}});
 ipcMain.handle('kalshi:autoDisarm',()=>{autoLive=false;return {autoLive:false}});
-ipcMain.handle('kalshi:balance',async(_e,p={})=>{return await getBalance(requireCreds(),Number.isInteger(Number(p.exchangeIndex))?Number(p.exchangeIndex):undefined)});
+ipcMain.handle('kalshi:balance',async(_e,p={})=>{
+  const exchangeIndex=Number.isInteger(Number(p.exchangeIndex))?Number(p.exchangeIndex):undefined;
+  // V9.21: display the account-wide available balance while also exposing
+  // the routed exchange balance for auto-trading risk checks.
+  const aggregate=await getBalance(requireCreds());
+  if(exchangeIndex===undefined)return aggregate;
+  const scoped=await getBalance(requireCreds(),exchangeIndex);
+  return {...aggregate,exchange_balance:scoped?.balance,exchange_balance_dollars:scoped?.balance_dollars,requested_exchange_index:exchangeIndex};
+});
 ipcMain.handle('kalshi:fills',async(_e,p={})=>getFills(requireCreds(),p||{}));
 ipcMain.handle('kalshi:settlements',async(_e,p={})=>getSettlements(requireCreds(),p||{}));
 ipcMain.handle('kalshi:positions',async(_e,p)=>{const ticker=typeof p==='string'?p:p?.ticker;const exchangeIndex=typeof p==='object'&&p!==null&&Number.isInteger(Number(p.exchangeIndex))?Number(p.exchangeIndex):undefined;return await getPositions(requireCreds(),ticker,exchangeIndex)});
