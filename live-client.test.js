@@ -8,7 +8,7 @@ eq(mapOutcomeOrder({outcome:'DOWN',priceCents:45,reduceOnly:false}),{side:'bid',
 eq(mapOutcomeOrder({outcome:'UP',priceCents:62,reduceOnly:true}),{side:'ask',priceCents:62},'UP exit');
 eq(mapOutcomeOrder({outcome:'DOWN',priceCents:62,reduceOnly:true}),{side:'bid',priceCents:62},'DOWN exit');
 
-const body=buildOrderBody({ticker:'TEST-TICKER',side:'bid',count:1,priceCents:55,clientOrderId:'controller-self-test',reduceOnly:false,exchangeIndex:0});
+const body=buildOrderBody({ticker:'TEST-TICKER',side:'bid',count:1,priceCents:55,clientOrderId:'controller-self-test',reduceOnly:false});
 assert.strictEqual(body.count,'1.00');
 assert.strictEqual(body.price,'0.5500');
 assert.strictEqual(body.time_in_force,'immediate_or_cancel');
