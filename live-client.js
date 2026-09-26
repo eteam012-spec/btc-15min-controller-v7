@@ -102,24 +102,32 @@ async function getOrder(creds, orderId) {
   return request({...creds, method:'GET', path:'/portfolio/orders/' + encodeURIComponent(orderId)});
 }
 
-function buildOrderBody({ticker,side,count,priceCents,clientOrderId,reduceOnly=false,exchangeIndex}) {
+function buildOrderBody({ticker,side,count,priceCents,clientOrderId,reduceOnly=false,exchangeIndex,postOnly,cancelOrderOnPause,subaccount}) {
   if(!ticker || !['bid','ask'].includes(side)) throw new Error('Invalid live order parameters');
   if(!Number.isInteger(count) || count < 1) throw new Error('Count must be a positive integer');
   if(!Number.isFinite(priceCents) || priceCents < 1 || priceCents > 99) throw new Error('Price must be 1–99 cents');
-  return {
+
+  // V9.16 diagnostic mode: send the documented V2 required fields plus
+  // client_order_id. Optional flags are included only when explicitly needed.
+  // This removes ambiguity from false-valued optional fields while preserving
+  // exchange routing when the active market supplies a valid exchange index.
+  const body = {
     ticker,
     client_order_id: clientOrderId,
     side,
     count: Number(count).toFixed(2),
     price: (priceCents / 100).toFixed(4),
     time_in_force: 'immediate_or_cancel',
-    self_trade_prevention_type: 'taker_at_cross',
-    post_only: false,
-    cancel_order_on_pause: false,
-    reduce_only: Boolean(reduceOnly),
-    subaccount: 0,
-    exchange_index: Number.isInteger(exchangeIndex) && exchangeIndex >= 0 ? exchangeIndex : 0
+    self_trade_prevention_type: 'taker_at_cross'
   };
+
+  if (reduceOnly) body.reduce_only = true;
+  if (postOnly === true) body.post_only = true;
+  if (cancelOrderOnPause === true) body.cancel_order_on_pause = true;
+  if (Number.isInteger(subaccount) && subaccount >= 0) body.subaccount = subaccount;
+  if (Number.isInteger(exchangeIndex) && exchangeIndex >= 0) body.exchange_index = exchangeIndex;
+
+  return body;
 }
 async function placeOrder(creds, args) {
   const body=buildOrderBody(args);
