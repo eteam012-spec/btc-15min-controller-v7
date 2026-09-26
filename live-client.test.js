@@ -13,10 +13,19 @@ assert.strictEqual(body.count,'1.00');
 assert.strictEqual(body.price,'0.5500');
 assert.strictEqual(body.time_in_force,'immediate_or_cancel');
 assert.strictEqual(body.self_trade_prevention_type,'taker_at_cross');
-assert.strictEqual(body.post_only,false);
-assert.strictEqual(body.cancel_order_on_pause,false);
-assert.strictEqual(body.subaccount,0);
-assert.strictEqual(body.exchange_index,0);
+assert.strictEqual(Object.prototype.hasOwnProperty.call(body,'post_only'),false);
+assert.strictEqual(Object.prototype.hasOwnProperty.call(body,'cancel_order_on_pause'),false);
+assert.strictEqual(Object.prototype.hasOwnProperty.call(body,'subaccount'),false);
+assert.strictEqual(Object.prototype.hasOwnProperty.call(body,'exchange_index'),false);
+
+const routed=buildOrderBody({ticker:'TEST-TICKER',side:'bid',count:1,priceCents:55,clientOrderId:'controller-routed-test',reduceOnly:false,exchangeIndex:2});
+assert.strictEqual(routed.exchange_index,2);
+assert.strictEqual(Object.prototype.hasOwnProperty.call(routed,'post_only'),false);
+assert.strictEqual(Object.prototype.hasOwnProperty.call(routed,'reduce_only'),false);
+
+const exit=buildOrderBody({ticker:'TEST-TICKER',side:'ask',count:1,priceCents:62,clientOrderId:'controller-exit-test',reduceOnly:true,exchangeIndex:2});
+assert.strictEqual(exit.reduce_only,true);
+assert.strictEqual(exit.exchange_index,2);
 
 assert.strictEqual(clampPrice(0),1);
 assert.strictEqual(clampPrice(100),99);
@@ -27,4 +36,5 @@ console.log('UP entry: bid @ 55¢');
 console.log('DOWN entry: bid YES @ 55¢ for a 45¢ NO price');
 console.log('UP exit: ask @ 62¢');
 console.log('DOWN exit: bid YES @ 62¢');
-console.log('V2 body formatting: PASS');
+console.log('V2 minimal body formatting: PASS');
+console.log('Optional routing/reduce-only fields: PASS');
