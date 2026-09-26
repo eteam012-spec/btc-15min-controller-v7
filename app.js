@@ -293,7 +293,7 @@ async function autoOrder(outcome,priceCents,count,reduceOnly=false){
   const orderPrice=(!reduceOnly&&outcome==='DOWN')?clamp(100-priceCents,1,99):clamp(priceCents,1,99);
   const r=await window.controllerAPI.kalshiAutoOrder({ticker:liveTicker,side,count,priceCents:orderPrice,reduceOnly,exchangeIndex:Number.isInteger(liveMarket?.exchangeIndex)?liveMarket.exchangeIndex:-1});
   const filled=Number(r.fill_count??r.fill_count_fp??r.filled_count??0);
-  rows.push({id:`${windowId}:AUTO:${"1790450194237"}`,date:day(),timestamp:new Date().toISOString(),windowId,windowStart,minute,marketTicker:liveTicker,type:reduceOnly?'AUTO_EXIT':'AUTO_ENTRY',side:outcome,priceCents,orderPriceCents:orderPrice,count,fillCount:filled,orderId:r.order_id||'',result:filled>0?'FILLED':'UNFILLED'});
+  rows.push({id:`${windowId}:AUTO:${Date.now()}`,date:day(),timestamp:new Date().toISOString(),windowId,windowStart,minute,marketTicker:liveTicker,type:reduceOnly?'AUTO_EXIT':'AUTO_ENTRY',side:outcome,priceCents,orderPriceCents:orderPrice,count,fillCount:filled,orderId:r.order_id||'',result:filled>0?'FILLED':'UNFILLED'});
   await persist();return {...r,filled,orderPriceCents:orderPrice}
 }
 async function autoTradeTick(){autoResetDay();if(!autoLive||autoBusy||!liveTicker||!liveMarket)return;autoBusy=true;try{const f=calc();const s=autoSettings();if(Date.now()-lastLiveAt>7000||Date.now()-lastBtcAt>7000){$('autoStatus').textContent='AUTO LIVE: PAUSED • STALE DATA';return}if(dailyLossCents>=s.dailyLoss*100){$('autoStatus').textContent='AUTO LIVE: HALTED • DAILY LOSS LIMIT';return}await autoReconcile();
