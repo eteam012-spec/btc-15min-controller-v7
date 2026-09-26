@@ -140,4 +140,4 @@ async function placeIOC(creds, {ticker, outcome, count, priceCents, clientOrderI
 }
 function clampPrice(v){ return Math.max(1, Math.min(99, Math.round(v))); }
 
-module.exports = { getBalance, getPositions, getFills, getSettlements, getOrder, placeIOC, placeOrder, buildOrderBody, mapOutcomeOrder, clampPrice };
+module.exports = { getBalance, getPositions, getFills, getSettlements, getOrder, placeIOC, placeOrder, buildOrderBody, mapOutcomeOrder, clampPrice, request };
