@@ -103,6 +103,8 @@ function pctPrice(v){const n=num(v);return n===null?null:(n<=1?n*100:n)}
 function marketPrice(m){if(!m)return null;for(const v of [m.lastPrice,m.raw?.last_price_dollars,m.raw?.last_price]){const n=num(v);if(n!==null)return n<=1?n*100:n}const bid=pctPrice(m.yesBid),ask=pctPrice(m.yesAsk);return bid!==null&&ask!==null?(bid+ask)/2:null}
 function parseLevel(x){if(Array.isArray(x)){const p=num(x[0]),s=num(x[1]);return p!==null&&s!==null?{price:p<=1?p*100:p,size:s}:null}if(x&&typeof x==='object'){const p=num(x.price??x.price_dollars??x.yes_price??x.no_price),s=num(x.quantity??x.size??x.count);return p!==null&&s!==null?{price:p<=1?p*100:p,size:s}:null}return null}
 function bookStats(m){const yes=(m?.orderbook?.yes||[]).map(parseLevel).filter(Boolean),no=(m?.orderbook?.no||[]).map(parseLevel).filter(Boolean);const depth=a=>a.reduce((s,x)=>s+x.size,0);const yesDepth=depth(yes),noDepth=depth(no);const yb=pctPrice(m?.yesBid),ya=pctPrice(m?.yesAsk),nb=pctPrice(m?.noBid),na=pctPrice(m?.noAsk);return {yesDepth,noDepth,imbalance:(yesDepth+noDepth)>0?(yesDepth-noDepth)/(yesDepth+noDepth):null,spread:yb!==null&&ya!==null?Math.max(0,ya-yb):null,yesBid:yb,yesAsk:ya,noBid:nb,noAsk:na}}
+function kalshiDirection(m){const yb=pctPrice(m?.yesBid),ya=pctPrice(m?.yesAsk),nb=pctPrice(m?.noBid),na=pctPrice(m?.noAsk);const ymid=yb!==null&&ya!==null?(yb+ya)/2:null;const nmid=nb!==null&&na!==null?(nb+na)/2:null;const yesProb=ymid!==null?ymid:(nmid!==null?100-nmid:null);if(yesProb===null)return null;if(yesProb>=52)return 'UP';if(yesProb<=48)return 'DOWN';return null}
+function kalshiOnlyLiveGate(feature){const d=kalshiDirection(liveMarket);if(!d)return 'KALSHI MARKET DIRECTION UNRESOLVED';if(feature?.pick!==d)return `KALSHI DIRECTION ${d} CONFLICTS WITH ENGINE PICK ${feature?.pick}`;if(Number.isFinite(feature?.secondsToClose)&&feature.secondsToClose<=60)return 'FINAL 60 SECONDS: NEW LIVE ENTRIES BLOCKED';return null}
 function componentSignals({above,up,down,imbalance,marketVelocity,btcVelocity,distancePct,secondsToClose}){
  const nearStrike=distancePct!==null&&Math.abs(distancePct)<0.10;
  const strike=above===null?0:(above?1:-1);
@@ -134,6 +136,9 @@ function calc(){syncMinuteFromContractClock();
  const dataFresh=lastLiveAt>0&&Date.now()-lastLiveAt<10000&&lastBtcAt>0&&Date.now()-lastBtcAt<10000;let pick=score>=0?'UP':'DOWN',confidence=clamp(50+Math.abs(score)*1.25,0,99),risk='MODERATE',action='WATCH';
  const priceSane=up>=0&&up<=100&&down>=0&&down<=100&&(up+down>1);
  if(!liveTicker||!liveMarket||!dataFresh){risk='CRITICAL';action='WAIT';confidence=0;reasons=['live market data missing or stale']}else if(!priceSane){risk='CRITICAL';action='WAIT';confidence=0;reasons=['market price data failed sanity check']}else if(confidence<62){risk='HIGH';action='WAIT'}else if(disagreement||(bs.spread!==null&&bs.spread>8)){risk='HIGH';action='WATCH'}else if(secondsToClose!==null&&secondsToClose<60){risk='HIGH';action='WATCH'}else{risk='LOW';action='PAPER READY'}
+ const kd=kalshiDirection(liveMarket);if(kd)reasons.push(`KALSHI MARKET DIRECTION: ${kd}`);else reasons.push('KALSHI MARKET DIRECTION: UNRESOLVED');
+ if(action==='PAPER READY'&&kd&&pick!==kd){risk='HIGH';action='WATCH';reasons.push(`LIVE SAFETY: Kalshi direction ${kd} conflicts with engine pick`)}
+ if(action==='PAPER READY'&&secondsToClose!==null&&secondsToClose<=60){risk='HIGH';action='WATCH';reasons.push('LIVE SAFETY: final 60 seconds — no new live entries')}
  const feature={ts:Date.now(),btc,target,marketUpPct:up,downPct:down,pick,score,confidence,risk,action,distancePct,secondsToClose,marketVelocity,btcVelocity,...bs,flipCount,flipUpToDown,flipDownToUp,historicalFlipAverage:flipStats.average,historicalFlipMedian:flipStats.median,flipSamples:flipStats.count,components:c,weights:w,marketTicker:liveTicker};lastFeature=feature;
  $('flipCount').textContent=`${flipCount}`;$('flipAverage').textContent=flipStats.average===null?'—':flipStats.average.toFixed(1);$('flipTrend').textContent=flipStats.count<3?'COLLECTING':`${flipCount} current • ${flipStats.average.toFixed(1)} avg`;
  // CONTRACT WINDOW is the minute position inside the active 15-minute contract.
@@ -160,7 +165,7 @@ function render(){const stored=allRecords.filter(r=>r.type!=='LEARNING_MODEL').l
 function exportCSV(){const data=allRecords.filter(r=>r.type!=='LEARNING_MODEL').concat(rows);const headers=['date','timestamp','windowId','windowStart','minute','btc','target','marketUpPct','downPct','pick','score','confidence','risk','action','distancePct','secondsToClose','marketVelocity','btcVelocity','yesDepth','noDepth','imbalance','spread','flipCount','flipUpToDown','flipDownToUp','historicalFlipAverage','historicalFlipMedian','flipSamples','marketTicker','settlement','result','officialSettlement','type','side','entryPriceCents','count','orderId','fee','positionAtClose','closedAt','pnlCents','status','paperOutcome','paperPnlCents'];const csv=[headers.join(','),...data.map(r=>headers.map(h=>`"${String(r[h]??'').replaceAll('"','""')}"`).join(','))].join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download=`BTC_15M_${day()}.csv`;a.click()}
 function isOpen(m){const s=String(m?.status||'').toLowerCase();return s==='open'||s==='active'}
 function candidate(markets){const arr=(markets||[]).filter(m=>{const t=((m.title||'')+' '+(m.subtitle||'')+' '+(m.ticker||'')+' '+(m.event_ticker||'')).toLowerCase();return(t.includes('bitcoin')||t.includes('btc'))&&/15\s*min|15-minute|15minute/.test(t)&&isOpen(m)});arr.sort((a,b)=>new Date(a.close_time||a.expiration_time||0)-new Date(b.close_time||b.expiration_time||0));return arr.find(m=>new Date(m.close_time||m.expiration_time||0)>new Date())||null}
-async function refreshBtc(){try{const r=await window.controllerAPI.btcSpot();if(Number.isFinite(Number(r.price))){$('btc').value=Number(r.price).toFixed(2);lastBtcAt=Date.now();$('btcSource').textContent='LIVE BTC: '+(r.sources||[]).map(x=>x.source).join(' + ')+' median • SPOT PROXY';calc()}}catch(e){$('btcSource').textContent='LIVE BTC: UNAVAILABLE — WAITING FOR FRESH DATA';calc()}}
+async function refreshBtc(){try{const r=await window.controllerAPI.btcSpot();if(Number.isFinite(Number(r.price))){$('btc').value=Number(r.price).toFixed(2);lastBtcAt=Date.now();$('btcSource').textContent='LIVE BTC REFERENCE: '+(r.sources||[]).map(x=>x.source).join(' + ')+' • DISPLAY ONLY — KALSHI IS LIVE EXECUTION AUTHORITY';calc()}}catch(e){$('btcSource').textContent='LIVE BTC REFERENCE: UNAVAILABLE • KALSHI LIVE DATA REMAINS AUTHORITATIVE';calc()}}
 function contractStartMs(m){const close=new Date(m?.closeTime||m?.expirationTime||0).getTime();return Number.isFinite(close)&&close>0?close-15*60*1000:null}
 function syncWindowNumberForContract(m){
  const currentStart=contractStartMs(m);if(currentStart===null)return;
@@ -254,6 +259,7 @@ async function liveExecute(){
     if(autoLive)throw new Error('Manual live test is locked while AUTO LIVE is ON. Disarm AUTO first.');
     const f=calc();
     if(f.action!=='PAPER READY')throw new Error('Engine is not ready: '+f.action);
+    const kalshiGate=kalshiOnlyLiveGate(f);if(kalshiGate)throw new Error('KALSHI-ONLY LIVE SAFETY BLOCK: '+kalshiGate);
     if(!liveTicker||!liveMarket)throw new Error('No active Kalshi contract');
     const maxSpend=Math.max(0.01,Number($('liveMaxSpend').value)||2);
     const priceCents=liveQuoteCents(f.pick);
@@ -443,6 +449,7 @@ async function autoTradeTick(){autoResetDay();if(!autoLive||autoBusy||!liveTicke
  }
  // No-trade blocks new entries, but does not block protective exits.
  if(noTradeWindow||autoEntryDoneTicker===liveTicker)return;
+ const kalshiGate=kalshiOnlyLiveGate(f);if(kalshiGate){$('autoStatus').textContent='AUTO LIVE: ENTRY BLOCKED • '+kalshiGate;return;}
  if(f.action!=='PAPER READY'||(secs!==null&&secs<90)||f.confidence<65)return;
  const balance=await liveBalance();if(!Number.isFinite(balance))return;
  const budgetCents=Math.floor(Math.min(s.maxSpend*100,(balance*s.riskPct/100),s.maxExposure*100));const p=autoEntryPrice(f.pick);if(p===null||p>s.maxEntryPrice){$('autoStatus').textContent=`AUTO LIVE: ENTRY BLOCKED • ${p===null?'NO QUOTE':`${p}¢ > ${s.maxEntryPrice.toFixed(0)}¢ MAX ENTRY`}`;return}if(budgetCents<p)return;
