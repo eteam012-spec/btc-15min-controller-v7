@@ -211,11 +211,12 @@ function candidate(markets){const arr=(markets||[]).filter(m=>{const t=((m.title
 async function refreshBtc(){
   if(Number.isFinite(Number(brtiState.value))&&brtiState.receivedAt&&Date.now()-brtiState.receivedAt<5000){
     $('btc').value=Number(brtiState.value).toFixed(2);lastBtcAt=brtiState.receivedAt;
-    $('btcSource').textContent='LIVE BTC REFERENCE: KALSHI CFB BRTI • '+(brtiState.connected?'STREAMING':'LAST VALUE')+' • EXECUTION AUTHORITY';
+    $('btcSource').textContent='LIVE BTC REFERENCE: KALSHI CFB BRTI • '+(brtiState.connected?'LIVE STREAM':'LAST VALUE')+' • EXECUTION AUTHORITY';
     calc();return;
   }
-  try{const r=await window.controllerAPI.btcSpot();if(Number.isFinite(Number(r.price))){$('btc').value=Number(r.price).toFixed(2);lastBtcAt=Date.now();$('btcSource').textContent='LIVE BTC REFERENCE: '+(r.sources||[]).map(x=>x.source).join(' + ')+' • FALLBACK DISPLAY ONLY — KALSHI BRTI PREFERRED';calc()}}
-  catch(e){$('btcSource').textContent='LIVE BTC REFERENCE: UNAVAILABLE • WAITING FOR KALSHI BRTI';calc()}
+  lastBtcAt=0;
+  $('btcSource').textContent='LIVE BTC REFERENCE: KALSHI CFB BRTI UNAVAILABLE • NEW LIVE ENTRIES BLOCKED';
+  updateAssistant(lastFeature);
 }
 function applyBRTI(s){
   brtiState={...brtiState,...(s||{})};
@@ -224,7 +225,10 @@ function applyBRTI(s){
     const age=brtiState.receivedAt?Math.max(0,Date.now()-brtiState.receivedAt):null;
     $('btcSource').textContent='LIVE BTC REFERENCE: KALSHI CFB BRTI • '+(brtiState.connected?'LIVE STREAM':'STALE')+' • '+(age!==null?Math.round(age/1000)+'s':'—')+' OLD • SETTLEMENT INDEX';
     calc();
-  }else{$('btcSource').textContent='LIVE BTC REFERENCE: WAITING FOR KALSHI CFB BRTI'+(brtiState.error?' • '+brtiState.error:'')}
+  }else{
+    lastBtcAt=0;
+    $('btcSource').textContent='LIVE BTC REFERENCE: WAITING FOR KALSHI CFB BRTI'+(brtiState.error?' • '+brtiState.error:'');
+  }
   updateAssistant(lastFeature);
 }
 function contractStartMs(m){const close=new Date(m?.closeTime||m?.expirationTime||0).getTime();return Number.isFinite(close)&&close>0?close-15*60*1000:null}
