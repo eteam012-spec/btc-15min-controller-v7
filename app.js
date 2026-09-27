@@ -1,9 +1,11 @@
+if(window.controllerAPI?.onBRTI){window.controllerAPI.onBRTI(applyBRTI)}
 window.addEventListener('error',e=>{const el=document.getElementById('feed');if(el)el.textContent='BOOT ERROR: '+(e?.error?.message||e?.message||'renderer error')});
 window.addEventListener('unhandledrejection',e=>{const el=document.getElementById('feed');if(el)el.textContent='BOOT ERROR: '+(e?.reason?.message||String(e?.reason||'promise error'))});
 const DEFAULTS={btc:76753,target:76448.22};
 const BASE_WEIGHTS={strike:1.0,market:1.0,orderbook:0.85,marketMomentum:0.75,btcMomentum:0.75,reversal:0.8};
 let minute=1,windowNumber=1,windowId='',windowStart='',rows=[],allRecords=[];
 let liveTicker=null, liveMarket=null, lastLiveAt=0, lastBtcAt=0, polling=null, switching=false;
+let brtiState={connected:false,value:null,time:null,receivedAt:null,avg60s:null,avg15m:null,updates:0,error:null};
 let lastFeature=null, paperPosition=null, pendingWindows=new Map(), lastAutoObservationKey='';
 let flipState=null, flipCount=0, flipUpToDown=0, flipDownToUp=0;
 let learning={version:1,completed:0,weights:{...BASE_WEIGHTS},windows:[],accuracy:0};
@@ -54,7 +56,7 @@ function updateAssistant(f){
   const a=assistantStateFor(f),now=Date.now();
   if(a.state!==assistantLastState){assistantLastState=a.state;orb.className=`assistant-orb state-${a.state}`;stateEl.textContent=a.state.toUpperCase();assistantAdd(a.message,a.type,a.key,true);}
   else if(!assistantInitialized||now-assistantLastAt>=12000)assistantAdd(a.message,a.type,a.key+"|pulse",true);
-  headline.textContent=a.headline;context.textContent=a.context;data.textContent=f?`ENGINE DATA: ${f.action} • ${f.risk} • SCORE ${Number(f.score).toFixed(1)} • KALSHI ${kalshiDirection(liveMarket)||"UNRESOLVED"}`:"ENGINE DATA: WAITING";
+  headline.textContent=a.headline;context.textContent=a.context;data.textContent=f?`ENGINE DATA: ${f.action} • ${f.risk} • SCORE ${Number(f.score).toFixed(1)} • KALSHI ${kalshiDirection(liveMarket)||"UNRESOLVED"} • BRTI ${Number.isFinite(Number(brtiState.value))?Number(brtiState.value).toFixed(2):"—"}`:"ENGINE DATA: WAITING";
   clock.textContent=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"});assistantInitialized=true;
 }
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
@@ -206,7 +208,25 @@ function render(){const stored=allRecords.filter(r=>r.type!=='LEARNING_MODEL').l
 function exportCSV(){const data=allRecords.filter(r=>r.type!=='LEARNING_MODEL').concat(rows);const headers=['date','timestamp','windowId','windowStart','minute','btc','target','marketUpPct','downPct','pick','score','confidence','risk','action','distancePct','secondsToClose','marketVelocity','btcVelocity','yesDepth','noDepth','imbalance','spread','flipCount','flipUpToDown','flipDownToUp','historicalFlipAverage','historicalFlipMedian','flipSamples','marketTicker','settlement','result','officialSettlement','type','side','entryPriceCents','count','orderId','fee','positionAtClose','closedAt','pnlCents','status','paperOutcome','paperPnlCents'];const csv=[headers.join(','),...data.map(r=>headers.map(h=>`"${String(r[h]??'').replaceAll('"','""')}"`).join(','))].join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download=`BTC_15M_${day()}.csv`;a.click()}
 function isOpen(m){const s=String(m?.status||'').toLowerCase();return s==='open'||s==='active'}
 function candidate(markets){const arr=(markets||[]).filter(m=>{const t=((m.title||'')+' '+(m.subtitle||'')+' '+(m.ticker||'')+' '+(m.event_ticker||'')).toLowerCase();return(t.includes('bitcoin')||t.includes('btc'))&&/15\s*min|15-minute|15minute/.test(t)&&isOpen(m)});arr.sort((a,b)=>new Date(a.close_time||a.expiration_time||0)-new Date(b.close_time||b.expiration_time||0));return arr.find(m=>new Date(m.close_time||m.expiration_time||0)>new Date())||null}
-async function refreshBtc(){try{const r=await window.controllerAPI.btcSpot();if(Number.isFinite(Number(r.price))){$('btc').value=Number(r.price).toFixed(2);lastBtcAt=Date.now();$('btcSource').textContent='LIVE BTC REFERENCE: '+(r.sources||[]).map(x=>x.source).join(' + ')+' • DISPLAY ONLY — KALSHI IS LIVE EXECUTION AUTHORITY';calc()}}catch(e){$('btcSource').textContent='LIVE BTC REFERENCE: UNAVAILABLE • KALSHI LIVE DATA REMAINS AUTHORITATIVE';calc()}}
+async function refreshBtc(){
+  if(Number.isFinite(Number(brtiState.value))&&brtiState.receivedAt&&Date.now()-brtiState.receivedAt<5000){
+    $('btc').value=Number(brtiState.value).toFixed(2);lastBtcAt=brtiState.receivedAt;
+    $('btcSource').textContent='LIVE BTC REFERENCE: KALSHI CFB BRTI • '+(brtiState.connected?'STREAMING':'LAST VALUE')+' • EXECUTION AUTHORITY';
+    calc();return;
+  }
+  try{const r=await window.controllerAPI.btcSpot();if(Number.isFinite(Number(r.price))){$('btc').value=Number(r.price).toFixed(2);lastBtcAt=Date.now();$('btcSource').textContent='LIVE BTC REFERENCE: '+(r.sources||[]).map(x=>x.source).join(' + ')+' • FALLBACK DISPLAY ONLY — KALSHI BRTI PREFERRED';calc()}}
+  catch(e){$('btcSource').textContent='LIVE BTC REFERENCE: UNAVAILABLE • WAITING FOR KALSHI BRTI';calc()}
+}
+function applyBRTI(s){
+  brtiState={...brtiState,...(s||{})};
+  if(Number.isFinite(Number(brtiState.value))){
+    $('btc').value=Number(brtiState.value).toFixed(2);lastBtcAt=Number(brtiState.receivedAt)||Date.now();
+    const age=brtiState.receivedAt?Math.max(0,Date.now()-brtiState.receivedAt):null;
+    $('btcSource').textContent='LIVE BTC REFERENCE: KALSHI CFB BRTI • '+(brtiState.connected?'LIVE STREAM':'STALE')+' • '+(age!==null?Math.round(age/1000)+'s':'—')+' OLD • SETTLEMENT INDEX';
+    calc();
+  }else{$('btcSource').textContent='LIVE BTC REFERENCE: WAITING FOR KALSHI CFB BRTI'+(brtiState.error?' • '+brtiState.error:'')}
+  updateAssistant(lastFeature);
+}
 function contractStartMs(m){const close=new Date(m?.closeTime||m?.expirationTime||0).getTime();return Number.isFinite(close)&&close>0?close-15*60*1000:null}
 function syncWindowNumberForContract(m){
  const currentStart=contractStartMs(m);if(currentStart===null)return;
