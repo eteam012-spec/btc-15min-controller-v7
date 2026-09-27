@@ -22,5 +22,6 @@ contextBridge.exposeInMainWorld('controllerAPI', {
   kalshiMarket: ticker => ipcRenderer.invoke('kalshi:market', ticker),
   kalshiOrderbook: ticker => ipcRenderer.invoke('kalshi:orderbook', ticker),
   kalshiSnapshot: ticker => ipcRenderer.invoke('kalshi:snapshot', ticker),
-  btcSpot: () => ipcRenderer.invoke('btc:spot')
+  btcSpot: () => ipcRenderer.invoke('btc:spot'),
+  onBRTI: callback => { const h=(_e,state)=>callback(state); ipcRenderer.on('kalshi:brti',h); return () => ipcRenderer.removeListener('kalshi:brti',h); }
 });
