@@ -19,7 +19,7 @@ function normalizePrivateKey(value) {
 
 function sign(privateKeyPem, timestampMs, method, path) {
   const pem = normalizePrivateKey(privateKeyPem);
-  const signPath = ('/trade-api/v2' + path).split('?')[0];
+  const signPath = (String(path).startsWith('/trade-api/') ? String(path) : '/trade-api/v2' + String(path)).split('?')[0];
   const msg = Buffer.from(String(timestampMs) + method.toUpperCase() + signPath, 'utf8');
   const signer = crypto.createSign('sha256');
   signer.update(msg);
