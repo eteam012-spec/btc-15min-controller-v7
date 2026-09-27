@@ -17,6 +17,46 @@ let liveTrade={ticker:null,position:0,side:null,count:0,entryCents:null,markCent
 let liveTradeBusy=false;
 let liveSettlementQueue=new Map();
 let lastLiveSettlement=null;
+let assistantMessages=[],assistantLastKey="",assistantLastAt=0,assistantLastState="monitor",assistantInitialized=false;
+function assistantPosition(){
+  const p=Math.abs(Number(liveTrade?.position)||0);
+  if(p>0)return {side:liveTrade.side||(liveTrade.position>0?"UP":"DOWN"),count:p,entry:Number(liveTrade.entryCents),mark:Number(liveTrade.markCents),pnl:Number(liveTrade.pnlCents)};
+  if(autoPosition&&Number(autoPosition.yesPosition)!==0)return {side:autoPosition.yesPosition>0?"UP":"DOWN",count:Math.abs(Number(autoPosition.yesPosition)),entry:Number(liveTrade.entryCents),mark:Number(liveTrade.markCents),pnl:Number(liveTrade.pnlCents)};
+  return null;
+}
+function assistantFormatTime(sec){if(!Number.isFinite(sec))return "time unavailable";if(sec<60)return Math.max(0,Math.floor(sec))+"s";return Math.floor(sec/60)+"m "+String(Math.floor(sec%60)).padStart(2,"0")+"s"}
+function assistantAdd(message,type="monitor",key="",force=false){
+  const now=Date.now();if(!force&&key&&key===assistantLastKey)return;if(!force&&now-assistantLastAt<3500)return;
+  assistantLastKey=key||assistantLastKey;assistantLastAt=now;assistantMessages.unshift({message,type,ts:new Date().toISOString()});assistantMessages=assistantMessages.slice(0,10);
+  const feed=$("assistantFeed");if(!feed)return;
+  feed.innerHTML=assistantMessages.map((m,i)=>`<div class="assistant-msg ${m.type} ${i===0?"latest":""}"><span class="assistant-msg-time">${new Date(m.ts).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"})}</span><span class="assistant-msg-text">${m.message}</span></div>`).join("");
+}
+function assistantStateFor(f){
+  const p=assistantPosition(),secs=f?.secondsToClose,kd=kalshiDirection(liveMarket),gate=kalshiOnlyLiveGate(f||{});
+  if(!f)return {state:"monitor",headline:"SYSTEM ONLINE • MONITORING ENGINE",context:"Waiting for strategy data.",message:"Standing by for the first complete market snapshot.",type:"monitor",key:"boot"};
+  if(p){
+    const mark=Number.isFinite(p.mark)?p.mark:null,entry=Number.isFinite(p.entry)?p.entry:null,lossPct=entry>0&&mark!==null?Math.max(0,((entry-mark)/entry)*100):0,adverse=(p.side==="UP"&&f.pick==="DOWN")||(p.side==="DOWN"&&f.pick==="UP");
+    if(lossPct>=80)return {state:"danger",headline:"SELL NOW • 80% LOSS GUARD",context:`${p.side} position • executable mark ${mark?.toFixed(1)||"—"}¢ • loss ${lossPct.toFixed(0)}% of entry`,message:"SELL NOW — the 80% loss guard has been reached. A reduce-only exit should be attempted immediately. This is a protection trigger, not a guaranteed fill.",type:"danger",key:`loss80:${liveTicker}`};
+    if(secs!==null&&secs<20)return {state:"danger",headline:"SELL NOW • WINDOW CLOSING",context:`${p.side} position • ${assistantFormatTime(secs)} remaining`,message:"SELL NOW — less than 20 seconds remain. The controller prioritizes flattening the open position before contract close.",type:"danger",key:`close:${liveTicker}`};
+    if(kd&&kd!==p.side)return {state:"flip",headline:"SELL NOW • KALSHI FLIP",context:`Position ${p.side} • Kalshi direction ${kd}`,message:`SELL NOW — Kalshi market direction has flipped against the open ${p.side} position. Reduce-only exit logic is active.`,type:"flip",key:`flip:${liveTicker}:${kd}`};
+    if(adverse||f.risk==="CRITICAL"||f.risk==="HIGH")return {state:"warning",headline:"CONSIDER SELLING • RISK RISING",context:`${p.side} position • risk ${f.risk} • engine pick ${f.pick}`,message:`CONSIDER SELLING — the engine is detecting adverse conditions for the open ${p.side} position. Watch Kalshi direction, momentum, and executable exit price closely.`,type:"warning",key:`risk:${liveTicker}:${f.risk}:${f.pick}`};
+    if(Number.isFinite(p.pnl)&&p.pnl>0)return {state:"profit",headline:"POSITION PROFITABLE • MONITOR EXIT",context:`${p.side} • unrealized ${money(p.pnl/100)} • ${assistantFormatTime(secs)}`,message:`POSITION UPDATE — the ${p.side} position is currently profitable. Continue monitoring for weakening momentum or a Kalshi reversal before the window closes.`,type:"profit",key:`profit:${liveTicker}:${Math.round(p.pnl)}`};
+    return {state:"position",headline:"POSITION OPEN • MONITORING",context:`${p.side} • ${p.count.toFixed(0)} contract • ${assistantFormatTime(secs)} remaining`,message:`HOLD / MONITOR — the open ${p.side} position remains aligned with the current engine direction.`,type:"position",key:`hold:${liveTicker}:${f.pick}`};
+  }
+  if(gate)return {state:"warning",headline:"ENTRY BLOCKED • WAIT",context:`Engine ${f.pick} • Kalshi ${kd||"unresolved"} • ${assistantFormatTime(secs)}`,message:`WAIT — no new live entry. ${gate}. The assistant will keep monitoring for alignment.`,type:"warning",key:`gate:${liveTicker}:${gate}`};
+  if(f.action==="PAPER READY"&&f.confidence>=65&&secs!==null&&secs>60)return {state:"buy",headline:`BUY SIGNAL • ${f.pick}`,context:`Confidence ${f.confidence.toFixed(0)} • risk ${f.risk} • ${assistantFormatTime(secs)} remaining`,message:`BUY CONDITIONS MET — engine pick ${f.pick}, confidence ${f.confidence.toFixed(0)}, and Kalshi direction agrees. Check the live quote and configured risk limits before entering.`,type:"buy",key:`buy:${liveTicker}:${f.pick}`};
+  if(secs!==null&&secs<=60)return {state:"warning",headline:"FINAL MINUTE • NO NEW ENTRY",context:`${assistantFormatTime(secs)} remaining • Kalshi authority active`,message:"WAIT — final 60 seconds. New live entries are blocked; the controller is in position-protection mode.",type:"warning",key:`final:${liveTicker}`};
+  if(f.risk==="HIGH"||f.action==="WAIT")return {state:"warning",headline:"WAIT • CONDITIONS NOT CLEAN",context:`Engine ${f.pick} • confidence ${f.confidence.toFixed(0)} • risk ${f.risk}`,message:"WAIT — the strategy engine does not currently have clean enough conditions for a live entry.",type:"warning",key:`wait:${liveTicker}:${f.risk}`};
+  return {state:"monitor",headline:"MONITORING • NO ENTRY",context:`Engine ${f.pick} • confidence ${f.confidence.toFixed(0)} • ${assistantFormatTime(secs)} remaining`,message:"MONITOR — conditions are developing, but there is no live entry signal yet.",type:"monitor",key:`monitor:${liveTicker}:${f.pick}:${Math.floor((secs||0)/15)}`};
+}
+function updateAssistant(f){
+  const orb=$("assistantOrb"),headline=$("assistantHeadline"),context=$("assistantContext"),stateEl=$("assistantOrbState"),data=$("assistantData"),clock=$("assistantClock");if(!orb||!headline)return;
+  const a=assistantStateFor(f),now=Date.now();
+  if(a.state!==assistantLastState){assistantLastState=a.state;orb.className=`assistant-orb state-${a.state}`;stateEl.textContent=a.state.toUpperCase();assistantAdd(a.message,a.type,a.key,true);}
+  else if(!assistantInitialized||now-assistantLastAt>=12000)assistantAdd(a.message,a.type,a.key+"|pulse",true);
+  headline.textContent=a.headline;context.textContent=a.context;data.textContent=f?`ENGINE DATA: ${f.action} • ${f.risk} • SCORE ${Number(f.score).toFixed(1)} • KALSHI ${kalshiDirection(liveMarket)||"UNRESOLVED"}`:"ENGINE DATA: WAITING";
+  clock.textContent=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"});assistantInitialized=true;
+}
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const direction=n=>n>=0?'UP':'DOWN';
 function minuteFromContractClock(closeTime){
@@ -97,7 +137,7 @@ async function recoverLearningFromRecords(){
  }
  return changed;
 }
-function startWindow(market){minute=1;windowId='W-'+Date.now();windowStart=new Date().toISOString();rows=[];paperPosition=null;autoPosition=null;autoEntryDoneTicker=null;noTradeWindow=false;lastAutoObservationKey='';flipState=null;flipCount=0;flipUpToDown=0;flipDownToUp=0;liveMarket=market||liveMarket;$('btc').value='';$('target').value=extractTarget(liveMarket) ?? DEFAULTS.target;render();calc()}
+function startWindow(market){assistantLastState='monitor';assistantLastKey='';minute=1;windowId='W-'+Date.now();windowStart=new Date().toISOString();rows=[];paperPosition=null;autoPosition=null;autoEntryDoneTicker=null;noTradeWindow=false;lastAutoObservationKey='';flipState=null;flipCount=0;flipUpToDown=0;flipDownToUp=0;liveMarket=market||liveMarket;$('btc').value='';$('target').value=extractTarget(liveMarket) ?? DEFAULTS.target;render();calc()}
 function extractTarget(m){if(!m)return null;for(const x of [m.strike,m.raw?.floor_strike,m.raw?.strike,m.raw?.floor_strike_dollars]){const n=Number(x);if(Number.isFinite(n)&&n>1000)return n}return null}
 function num(v){const n=Number(v);return Number.isFinite(n)?n:null}
 function pctPrice(v){const n=num(v);return n===null?null:(n<=1?n*100:n)}
@@ -145,7 +185,7 @@ function calc(){syncMinuteFromContractClock();
  // CONTRACT WINDOW is the minute position inside the active 15-minute contract.
  // windowNumber remains an internal daily sequence for persisted records.
  syncMinuteFromContractClock();
- $('window').textContent=`${minute} / 15`;$('btcView').textContent=money(btc);$('targetView').textContent=money(target);$('pick').textContent=pick;$('confidence').textContent=pct(confidence);$('risk').textContent=risk;$('action').textContent=action;$('score').textContent=score.toFixed(1);$('spread').textContent=bs.spread===null?'—':bs.spread.toFixed(1)+'¢';$('imbalance').textContent=bs.imbalance===null?'—':bs.imbalance.toFixed(2);$('countdown').textContent=secondsToClose===null?'—':`${Math.floor(secondsToClose/60)}:${String(Math.floor(secondsToClose%60)).padStart(2,'0')}`;$('alert').textContent=action==='WAIT'?'WAIT — engine does not have enough clean data to act.':reasons.join(' • ');$('reason').textContent=`Adaptive score ${score.toFixed(1)} using learned weights after ${learning.completed} completed windows.`;return feature;
+ $('window').textContent=`${minute} / 15`;$('btcView').textContent=money(btc);$('targetView').textContent=money(target);$('pick').textContent=pick;$('confidence').textContent=pct(confidence);$('risk').textContent=risk;$('action').textContent=action;$('score').textContent=score.toFixed(1);$('spread').textContent=bs.spread===null?'—':bs.spread.toFixed(1)+'¢';$('imbalance').textContent=bs.imbalance===null?'—':bs.imbalance.toFixed(2);$('countdown').textContent=secondsToClose===null?'—':`${Math.floor(secondsToClose/60)}:${String(Math.floor(secondsToClose%60)).padStart(2,'0')}`;$('alert').textContent=action==='WAIT'?'WAIT — engine does not have enough clean data to act.':reasons.join(' • ');$('reason').textContent=`Adaptive score ${score.toFixed(1)} using learned weights after ${learning.completed} completed windows.`;updateAssistant(feature);return feature;
 }
 async function record(){const r=calc();const row={id:`${windowId}:${Date.now()}`,type:'OBSERVATION',date:day(),timestamp:new Date().toISOString(),windowNumber,windowId,windowStart,minute,...r,result:'PENDING'};rows.push(row);render();await persist()}
 async function recordObservationIfNeeded(){if(!liveTicker||!liveMarket)return;syncMinuteFromContractClock();const key=`${liveTicker}:${minute}`;if(key===lastAutoObservationKey)return;const r=calc();const row={id:`${windowId}:OBS:${minute}`,type:'OBSERVATION',date:day(),timestamp:new Date().toISOString(),windowNumber,windowId,windowStart,minute,...r,result:'PENDING'};rows.push(row);lastAutoObservationKey=key;render();await persist()}
@@ -530,7 +570,7 @@ async function autoTradeTick(){
  autoBusy=true;
  try{
    const f=calc(),s=autoSettings();
-   if(Date.now()-lastLiveAt>7000||Date.now()-lastBtcAt>7000){$('autoStatus').textContent='AUTO LIVE: PAUSED • STALE DATA • NO NEW ENTRY';return}
+   if(Date.now()-lastLiveAt>7000){$('autoStatus').textContent='AUTO LIVE: PAUSED • STALE KALSHI DATA • NO NEW ENTRY';return}
    if(dailyLossCents>=s.dailyLoss*100){$('autoStatus').textContent='AUTO LIVE: HALTED • DAILY LOSS LIMIT';return}
    await autoReconcile();
    const secs=f.secondsToClose;
