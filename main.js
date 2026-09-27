@@ -1,6 +1,8 @@
 const { app, BrowserWindow, ipcMain, session, safeStorage, dialog } = require('electron');
-const https=require('https');const path=require('path');const fs=require('fs');const crypto=require('crypto');const {getBalance,getPositions,getFills,getSettlements,getOrder,placeIOC,placeOrder,request}=require('./live-client');
-let mainWindow;let liveArmed=false;let autoLive=false;let liveFirstOrderConfirmed=false;const dataDir=path.join(app.getPath('userData'),'data');const recordsFile=path.join(dataDir,'records.json');const credentialsFile=path.join(dataDir,'kalshi.credentials');
+const https=require('https');const path=require('path');const fs=require('fs');const crypto=require('crypto');const {getBalance,getPositions,getFills,getSettlements,getOrder,placeIOC,placeOrder,request,authHeaders}=require('./live-client');
+const WebSocket=require('ws');
+let mainWindow;let liveArmed=false;
+let brtiSocket=null,brtiReconnectTimer=null,brtiState={connected:false,value:null,time:null,receivedAt:null,avg60s:null,avg15m:null,updates:0,error:null};let autoLive=false;let liveFirstOrderConfirmed=false;const dataDir=path.join(app.getPath('userData'),'data');const recordsFile=path.join(dataDir,'records.json');const credentialsFile=path.join(dataDir,'kalshi.credentials');
 function httpsJson(url,timeoutMs=7000){return new Promise((resolve,reject)=>{const req=https.get(url,{headers:{'User-Agent':'BTC-15M-Controller/9.26'}},res=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{if(res.statusCode<200||res.statusCode>=300)return reject(new Error(`HTTP ${res.statusCode}`));try{resolve(JSON.parse(d))}catch(e){reject(e)}})});req.setTimeout(timeoutMs,()=>req.destroy(new Error('Request timed out')));req.on('error',reject)})}
 function ensureDataDir(){fs.mkdirSync(dataDir,{recursive:true})}
 function saveCredentials(apiKeyId,privateKey){
@@ -21,10 +23,25 @@ function loadCredentials(){
 }
 function clearCredentials(){try{if(fs.existsSync(credentialsFile))fs.rmSync(credentialsFile,{force:true})}catch{}liveArmed=false;liveFirstOrderConfirmed=false}
 function requireCreds(){const c=loadCredentials();if(!c?.apiKeyId||!c?.privateKey)throw new Error('Kalshi API credentials are not configured');return c}
+function sendBRTI(){if(mainWindow&&!mainWindow.isDestroyed())mainWindow.webContents.send('kalshi:brti',brtiState)}
+function stopBRTIStream(){if(brtiReconnectTimer){clearTimeout(brtiReconnectTimer);brtiReconnectTimer=null}if(brtiSocket){try{brtiSocket.removeAllListeners();brtiSocket.close()}catch{}brtiSocket=null}brtiState={...brtiState,connected:false};sendBRTI()}
+function startBRTIStream(){
+  if(brtiSocket&&[WebSocket.OPEN,WebSocket.CONNECTING].includes(brtiSocket.readyState))return;
+  let creds;try{creds=requireCreds()}catch{brtiState={...brtiState,connected:false,error:'CREDENTIALS NOT CONFIGURED'};sendBRTI();return}
+  const wsPath='/trade-api/ws/v2',h=authHeaders(creds.apiKeyId,creds.privateKey,'GET',wsPath);
+  try{
+    const ws=new WebSocket('wss://external-api-ws.kalshi.com/trade-api/ws/v2',{headers:h});brtiSocket=ws;
+    ws.on('open',()=>{brtiState={...brtiState,connected:true,error:null};sendBRTI();ws.send(JSON.stringify({id:1,cmd:'subscribe',params:{channels:['cfbenchmarks_value'],index_ids:['BRTI']}}))});
+    ws.on('message',raw=>{try{const packet=JSON.parse(raw.toString()),msg=packet?.msg||packet;if(packet?.type!=='cfbenchmarks_value')return;let d=msg?.data;if(typeof d==='string'){try{d=JSON.parse(d)}catch{}}const value=Number(d?.value??msg?.value),t=Number(d?.time??msg?.time??msg?.received_at),avg60=Number(msg?.avg_60s_data?.value),avg15=Number(msg?.last_60s_windowed_average_15min?.value);brtiState={...brtiState,connected:true,value:Number.isFinite(value)?value:brtiState.value,time:Number.isFinite(t)?t:brtiState.time,receivedAt:Date.now(),avg60s:Number.isFinite(avg60)?avg60:brtiState.avg60s,avg15m:Number.isFinite(avg15)?avg15:brtiState.avg15m,updates:brtiState.updates+1,error:null};sendBRTI()}catch{}});
+    ws.on('error',e=>{brtiState={...brtiState,connected:false,error:String(e?.message||e)};sendBRTI()});
+    ws.on('close',()=>{brtiSocket=null;brtiState={...brtiState,connected:false};sendBRTI();if(!brtiReconnectTimer)brtiReconnectTimer=setTimeout(()=>{brtiReconnectTimer=null;startBRTIStream()},3000)});
+  }catch(e){brtiState={...brtiState,connected:false,error:String(e?.message||e)};sendBRTI();if(!brtiReconnectTimer)brtiReconnectTimer=setTimeout(()=>{brtiReconnectTimer=null;startBRTIStream()},3000)}
+}
+
 function createWindow(){mainWindow=new BrowserWindow({width:1500,height:1050,minWidth:1150,minHeight:800,title:'BTC 15-Minute Controller — Strategy Engine',webPreferences:{preload:path.join(__dirname,'preload.js'),nodeIntegration:false,contextIsolation:true,sandbox:true,devTools:false}});mainWindow.setMenuBarVisibility(false);mainWindow.loadFile(path.join(__dirname,'index.html'));mainWindow.webContents.on('will-navigate',e=>e.preventDefault());mainWindow.webContents.setWindowOpenHandler(()=>({action:'deny'}))}
-app.whenReady().then(()=>{ensureDataDir();session.defaultSession.webRequest.onHeadersReceived((d,cb)=>cb({responseHeaders:{...d.responseHeaders,'Content-Security-Policy':["default-src 'self'; connect-src 'self' https://external-api.kalshi.com https://api.elections.kalshi.com https://api.coinbase.com https://api.kraken.com; img-src 'self' data:; style-src 'self'; script-src 'self'"]}}));
+app.whenReady().then(()=>{ensureDataDir();startBRTIStream();session.defaultSession.webRequest.onHeadersReceived((d,cb)=>cb({responseHeaders:{...d.responseHeaders,'Content-Security-Policy':["default-src 'self'; connect-src 'self' https://external-api.kalshi.com https://api.elections.kalshi.com https://api.coinbase.com https://api.kraken.com; img-src 'self' data:; style-src 'self'; script-src 'self'"]}}));
 ipcMain.handle('kalshi:status',()=>({mode:liveArmed?'LIVE_ARMED':'LIVE_DISARMED',tradingEnabled:liveArmed,credentialStored:Boolean(loadCredentials()),secureStorage:safeStorage.isEncryptionAvailable(),firstOrderConfirmed:liveFirstOrderConfirmed}));
-ipcMain.handle('kalshi:configure',(_e,{apiKeyId,privateKey})=>{if(!apiKeyId||!privateKey)throw new Error('API key ID and private key are required');saveCredentials(apiKeyId,privateKey);liveArmed=false;liveFirstOrderConfirmed=false;return {credentialStored:true,secureStorage:true}});
+ipcMain.handle('kalshi:configure',(_e,{apiKeyId,privateKey})=>{if(!apiKeyId||!privateKey)throw new Error('API key ID and private key are required');saveCredentials(apiKeyId,privateKey);liveArmed=false;liveFirstOrderConfirmed=false;return {credentialStored:true,secureStorage:true}startBRTIStream();});
 ipcMain.handle('kalshi:clearCredentials',()=>{clearCredentials();return {credentialStored:false}});
 ipcMain.handle('kalshi:arm',()=>{requireCreds();liveArmed=true;return {armed:true}});
 ipcMain.handle('kalshi:disarm',()=>{liveArmed=false;autoLive=false;return {armed:false}});
