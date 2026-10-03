@@ -10,11 +10,45 @@ let lastFeature=null, paperPosition=null, pendingWindows=new Map(), lastAutoObse
 let flipState=null, flipCount=0, flipUpToDown=0, flipDownToUp=0;
 let learning={version:1,completed:0,weights:{...BASE_WEIGHTS},windows:[],accuracy:0};
 const $=id=>document.getElementById(id);
+window.addEventListener('DOMContentLoaded',()=>{const n=$('phoneNotifyTopic');if(n){n.value=phoneNotifyTopic;n.addEventListener('change',()=>{phoneNotifyTopic=n.value.trim();localStorage.setItem('btc15_phone_topic',phoneNotifyTopic)})}});
+
 const money=n=>'$'+Number(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
 const pct=n=>Number.isFinite(n)?`${n.toFixed(1)}%`:'—';
 const day=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 let autoLive=false,noTradeWindow=false,autoBusy=false,autoEntryDoneTicker=null,autoPosition=null,lastAutoActionAt=0,dailyLossCents=0,autoDay=day();
 let autoContinuous=true,autoRolloverPending=false;
+let phoneNotifyTopic=localStorage.getItem('btc15_phone_topic')||'';
+let phoneNotifyLastKey='';
+let phoneNotifyLastDirection='';
+function phoneNotify(message,priority='high',tags='bell'){
+  const topic=String(phoneNotifyTopic||'').trim();
+  if(!topic||!window.controllerAPI?.sendNotification)return;
+  window.controllerAPI.sendNotification(topic,message,priority,tags).catch(()=>{});
+}
+function maybePhoneNotify(feature,secondsToClose){
+  if(!feature)return;
+  const sec=Number(secondsToClose);
+  const ticker=String(liveTicker||'');
+  if(Number.isFinite(sec)){
+    const thresholds=[180,120,60];
+    for(const t of thresholds){
+      if(sec<=t&&sec>t-4){
+        const key=ticker+':close:'+t;
+        if(key!==phoneNotifyLastKey){phoneNotifyLastKey=key;phoneNotify('BTC 15M: '+(t/60)+' minute'+(t===60?'':'s')+' until contract close. Pick '+feature.pick+'.',t===60?'max':'high','clock1');}
+      }
+    }
+  }
+  const dir=String(feature.pick||'');
+  if(dir&&dir!=='WAIT'&&dir!==phoneNotifyLastDirection){
+    phoneNotifyLastDirection=dir;
+    phoneNotify('BTC 15M signal changed: '+dir+' • confidence '+Number(feature.confidence||0).toFixed(0)+'% • risk '+feature.risk+'.','high',dir==='UP'?'arrow_up':'arrow_down');
+  }
+  if(feature.action==='WAIT'&&feature.risk==='HIGH'){
+    const key=ticker+':risk';
+    if(key!==phoneNotifyLastKey){phoneNotifyLastKey=key;phoneNotify('BTC 15M: HIGH RISK / WAIT — new entry conditions are blocked.','high','warning');}
+  }
+}
+
 let liveTrade={ticker:null,position:0,side:null,count:0,entryCents:null,markCents:null,pnlCents:null,balanceCents:null,fee:null,orderId:null,result:'PENDING',startedAt:null,points:[]};
 let liveTradeBusy=false;
 let liveSettlementQueue=new Map();
@@ -188,7 +222,7 @@ function calc(){syncMinuteFromContractClock();
  // CONTRACT WINDOW is the minute position inside the active 15-minute contract.
  // windowNumber remains an internal daily sequence for persisted records.
  syncMinuteFromContractClock();
- $('window').textContent=`${minute} / 15`;$('btcView').textContent=money(btc);$('targetView').textContent=money(target);$('pick').textContent=pick;$('confidence').textContent=pct(confidence);$('risk').textContent=risk;$('action').textContent=action;$('score').textContent=score.toFixed(1);$('spread').textContent=bs.spread===null?'—':bs.spread.toFixed(1)+'¢';$('imbalance').textContent=bs.imbalance===null?'—':bs.imbalance.toFixed(2);$('countdown').textContent=secondsToClose===null?'—':`${Math.floor(secondsToClose/60)}:${String(Math.floor(secondsToClose%60)).padStart(2,'0')}`;$('alert').textContent=action==='WAIT'?'WAIT — engine does not have enough clean data to act.':reasons.join(' • ');$('reason').textContent=`Adaptive score ${score.toFixed(1)} using learned weights after ${learning.completed} completed windows.`;updateAssistant(feature);return feature;
+ $('window').textContent=`${minute} / 15`;$('btcView').textContent=money(btc);$('targetView').textContent=money(target);$('pick').textContent=pick;$('confidence').textContent=pct(confidence);$('risk').textContent=risk;$('action').textContent=action;$('score').textContent=score.toFixed(1);$('spread').textContent=bs.spread===null?'—':bs.spread.toFixed(1)+'¢';$('imbalance').textContent=bs.imbalance===null?'—':bs.imbalance.toFixed(2);$('countdown').textContent=secondsToClose===null?'—':`${Math.floor(secondsToClose/60)}:${String(Math.floor(secondsToClose%60)).padStart(2,'0')}`;$('alert').textContent=action==='WAIT'?'WAIT — engine does not have enough clean data to act.':reasons.join(' • ');$('reason').textContent=`Adaptive score ${score.toFixed(1)} using learned weights after ${learning.completed} completed windows.`;maybePhoneNotify(feature,secondsToClose);updateAssistant(feature);return feature;
 }
 async function record(){const r=calc();const row={id:`${windowId}:${Date.now()}`,type:'OBSERVATION',date:day(),timestamp:new Date().toISOString(),windowNumber,windowId,windowStart,minute,...r,result:'PENDING'};rows.push(row);render();await persist()}
 async function recordObservationIfNeeded(){if(!liveTicker||!liveMarket)return;syncMinuteFromContractClock();const key=`${liveTicker}:${minute}`;if(key===lastAutoObservationKey)return;const r=calc();const row={id:`${windowId}:OBS:${minute}`,type:'OBSERVATION',date:day(),timestamp:new Date().toISOString(),windowNumber,windowId,windowStart,minute,...r,result:'PENDING'};rows.push(row);lastAutoObservationKey=key;render();await persist()}
