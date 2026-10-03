@@ -23,5 +23,6 @@ contextBridge.exposeInMainWorld('controllerAPI', {
   kalshiOrderbook: ticker => ipcRenderer.invoke('kalshi:orderbook', ticker),
   kalshiSnapshot: ticker => ipcRenderer.invoke('kalshi:snapshot', ticker),
   btcSpot: () => ipcRenderer.invoke('btc:spot'),
+  sendNotification: (topic,message,priority='high',tags='bell') => ipcRenderer.invoke('notifications:send',{topic,message,priority,tags}),
   onBRTI: callback => { const h=(_e,state)=>callback(state); ipcRenderer.on('kalshi:brti',h); return () => ipcRenderer.removeListener('kalshi:brti',h); }
 });
