@@ -1,0 +1,14 @@
+{
+  "name":"BTC 15-Minute Controller",
+  "short_name":"BTC 15M",
+  "description":"Mobile BTC 15-minute market monitor and paper strategy controller.",
+  "start_url":"/btc-15min-controller-v7/mobile/",
+  "scope":"/btc-15min-controller-v7/mobile/",
+  "display":"standalone",
+  "orientation":"portrait",
+  "background_color":"#050a0f",
+  "theme_color":"#07151d",
+  "icons":[
+    {"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}
+  ]
+}
