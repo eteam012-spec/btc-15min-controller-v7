@@ -4,6 +4,7 @@ const WebSocket=require('ws');
 let mainWindow;let liveArmed=false;
 let brtiSocket=null,brtiReconnectTimer=null,brtiState={connected:false,value:null,time:null,receivedAt:null,avg60s:null,avg15m:null,updates:0,error:null};let autoLive=false;let liveFirstOrderConfirmed=false;const dataDir=path.join(app.getPath('userData'),'data');const recordsFile=path.join(dataDir,'records.json');const credentialsFile=path.join(dataDir,'kalshi.credentials');
 function httpsJson(url,timeoutMs=7000){return new Promise((resolve,reject)=>{const req=https.get(url,{headers:{'User-Agent':'BTC-15M-Controller/9.26'}},res=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{if(res.statusCode<200||res.statusCode>=300)return reject(new Error(`HTTP ${res.statusCode}`));try{resolve(JSON.parse(d))}catch(e){reject(e)}})});req.setTimeout(timeoutMs,()=>req.destroy(new Error('Request timed out')));req.on('error',reject)})}
+function httpsPostText(url,body,headers={},timeoutMs=7000){return new Promise((resolve,reject)=>{const u=new URL(url);const data=Buffer.from(String(body||''));const req=https.request({hostname:u.hostname,path:u.pathname+u.search,method:'POST',headers:{'Content-Type':'text/plain; charset=utf-8','Content-Length':data.length,'User-Agent':'BTC-15M-Controller/9.31',...headers}},res=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{if(res.statusCode<200||res.statusCode>=300)return reject(new Error('HTTP '+res.statusCode));resolve(d)})});req.setTimeout(timeoutMs,()=>req.destroy(new Error('Request timed out')));req.on('error',reject);req.write(data);req.end()})}
 function ensureDataDir(){fs.mkdirSync(dataDir,{recursive:true})}
 function saveCredentials(apiKeyId,privateKey){
   ensureDataDir();
@@ -41,6 +42,15 @@ function startBRTIStream(){
 function createWindow(){mainWindow=new BrowserWindow({width:1500,height:1050,minWidth:1150,minHeight:800,title:'BTC 15-Minute Controller — Strategy Engine',webPreferences:{preload:path.join(__dirname,'preload.js'),nodeIntegration:false,contextIsolation:true,sandbox:true,devTools:false}});mainWindow.setMenuBarVisibility(false);mainWindow.loadFile(path.join(__dirname,'index.html'));mainWindow.webContents.once('did-finish-load',()=>sendBRTI());mainWindow.webContents.on('will-navigate',e=>e.preventDefault());mainWindow.webContents.setWindowOpenHandler(()=>({action:'deny'}))}
 app.whenReady().then(()=>{ensureDataDir();startBRTIStream();session.defaultSession.webRequest.onHeadersReceived((d,cb)=>cb({responseHeaders:{...d.responseHeaders,'Content-Security-Policy':["default-src 'self'; connect-src 'self' https://external-api.kalshi.com https://api.elections.kalshi.com https://api.coinbase.com https://api.kraken.com; img-src 'self' data:; style-src 'self'; script-src 'self'"]}}));
 ipcMain.handle('kalshi:status',()=>({mode:liveArmed?'LIVE_ARMED':'LIVE_DISARMED',tradingEnabled:liveArmed,credentialStored:Boolean(loadCredentials()),secureStorage:safeStorage.isEncryptionAvailable(),firstOrderConfirmed:liveFirstOrderConfirmed}));
+ipcMain.handle('notifications:send',async(_e,p={})=>{
+ const topic=String(p?.topic||'').trim();
+ const message=String(p?.message||'').trim();
+ if(!topic||!message)throw new Error('Notification topic and message are required');
+ if(!/^[A-Za-z0-9_-]{3,64}$/.test(topic))throw new Error('Notification topic must use letters, numbers, underscore or hyphen');
+ const priority=['min','low','default','high','max'].includes(String(p?.priority))?String(p.priority):'high';
+ await httpsPostText('https://ntfy.sh/'+encodeURIComponent(topic),message,{Title:'BTC 15-Minute Controller',Priority:priority,Tags:String(p?.tags||'bell')});
+ return {sent:true};
+});
 ipcMain.handle('kalshi:configure',(_e,{apiKeyId,privateKey})=>{if(!apiKeyId||!privateKey)throw new Error('API key ID and private key are required');saveCredentials(apiKeyId,privateKey);liveArmed=false;liveFirstOrderConfirmed=false;startBRTIStream();return {credentialStored:true,secureStorage:true};});
 ipcMain.handle('kalshi:clearCredentials',()=>{clearCredentials();stopBRTIStream();return {credentialStored:false}});
 ipcMain.handle('kalshi:arm',()=>{requireCreds();liveArmed=true;return {armed:true}});
